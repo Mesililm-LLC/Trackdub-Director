@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Trackdub.Director.Cli/Trackdub.Director.Cli.csproj" />
+    <Project Path="src/Trackdub.Director.Core/Trackdub.Director.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Trackdub.Director.Tests/Trackdub.Director.Tests.csproj" />
+  </Folder>
+</Solution>
