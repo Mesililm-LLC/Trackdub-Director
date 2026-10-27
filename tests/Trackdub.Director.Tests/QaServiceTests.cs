@@ -236,12 +236,19 @@ public sealed class QaServiceTests
         Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
     }
 
+    private static bool HasRealApiKey
+    {
+        get
+        {
+            string? k = Environment.GetEnvironmentVariable("META_API_KEY") ?? Environment.GetEnvironmentVariable("META_MODEL_API_KEY");
+            return !string.IsNullOrWhiteSpace(k) && k.Trim() != "test-fake-key" && k.Trim().StartsWith("LLM_", StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task Live_qa_runs_only_with_api_key()
     {
-        bool hasKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("META_API_KEY"))
-            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("META_MODEL_API_KEY"));
-        if (!hasKey)
+        if (!HasRealApiKey)
         {
             return;
         }

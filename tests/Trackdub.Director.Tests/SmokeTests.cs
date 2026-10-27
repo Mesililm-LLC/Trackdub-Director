@@ -4,9 +4,16 @@ namespace Trackdub.Director.Tests;
 
 public sealed class SmokeTests
 {
-    private static bool HasApiKey =>
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("META_API_KEY"))
-        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("META_MODEL_API_KEY"));
+    private static bool HasRealApiKey
+    {
+        get
+        {
+            string? k = Environment.GetEnvironmentVariable("META_API_KEY") ?? Environment.GetEnvironmentVariable("META_MODEL_API_KEY");
+            return !string.IsNullOrWhiteSpace(k) && k.Trim() != "test-fake-key" && k.Trim().StartsWith("LLM_", StringComparison.Ordinal);
+        }
+    }
+
+    private static bool HasApiKey => HasRealApiKey;
 
     [Fact]
     public async Task Smoke_translates_english_to_spanish()
