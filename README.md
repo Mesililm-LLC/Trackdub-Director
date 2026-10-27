@@ -20,9 +20,8 @@ in this repo is written during the hackathon build period.
 The Director Lane: Meta-model stages that sit alongside the existing
 Trackdub pipeline.
 
-- Meta Model API wiring + CLI entry point (today)
-- Translation lane behind the existing consent gate, with provenance and
-  metering preserved
+- Meta Model API wiring + CLI entry point
+- Translation lane with provenance and metering preserved
 - QA / timing rewrite loop (bounce-back revisions with a pass-rate harness)
 - Director mode: scene context driving register adaptation
 - Audition casting: multiple takes per line, scored and auto-picked
@@ -33,8 +32,9 @@ feedback loop (the QA/timing bounce-back).
 
 ## Status
 
-Day 1 (Oct 26): .NET 10 solution scaffold, Meta Model API auth, EN->ES smoke
-test. `muse-spark-1.1` via `https://api.meta.ai/v1`.
+Day 2 (Oct 26): Translation lane batch (segments JSON in, translated JSON out
+with per-line provenance and usage). `muse-spark-1.1` via `https://api.meta.ai/v1`
+(verified against `GET /models`; no Llama IDs exposed by this account).
 
 ## Setup
 
@@ -76,21 +76,52 @@ EN: The director checks every line before it reaches the audience.
 ES: <Spanish translation returned by the model>
 ```
 
+## Translation lane
+
+Batch translate a JSON file of `{id, text}` segments:
+
+```bash
+dotnet run --project src/Trackdub.Director.Cli -- translate --input samples/segments.json --output translated.json
+dotnet run --project src/Trackdub.Director.Cli -- translate --input samples/segments.json --output translated.json --from en --to es
+```
+
+Input (`samples/segments.json`):
+
+```json
+[
+  { "id": "seg-001", "text": "The director checks every line before it reaches the audience." }
+]
+```
+
+Output: each segment gains `translation`, `provenance` (model ID, endpoint host,
+UTC timestamp, prompt template version), and `usage` (prompt/completion/total
+tokens per line and totaled). See `samples/segments.json` for a runnable 8-line
+sample.
+
+List models available to this account:
+
+```bash
+dotnet run --project src/Trackdub.Director.Cli -- models
+```
+
 Tests:
 
 ```bash
 dotnet test
 ```
 
-The live smoke test is skipped (not failed) when no API key is present.
+The live smoke test is skipped (not failed) when no API key is present. The
+translation batch live test likewise runs only with a key; provenance/usage
+assertion tests use a fake HTTP handler.
 
 ## Layout
 
 ```text
 Trackdub.Director.slnx
-src/Trackdub.Director.Core/    Class library: Meta Model API client (HttpClient + System.Text.Json)
-src/Trackdub.Director.Cli/     Console app: smoke subcommand (more lanes added later)
-tests/Trackdub.Director.Tests/ xUnit tests (live smoke test, skipped without META_API_KEY)
+src/Trackdub.Director.Core/    Class library: Meta Model API client + translation service
+src/Trackdub.Director.Cli/     Console app: smoke / translate / models subcommands
+tests/Trackdub.Director.Tests/ xUnit tests (live tests skipped without key; fake-handler provenance tests)
+samples/segments.json           8-line sample input for the translate command
 .env.example                   Placeholder config - no real keys
 global.json                    Pins .NET 10 SDK
 ```

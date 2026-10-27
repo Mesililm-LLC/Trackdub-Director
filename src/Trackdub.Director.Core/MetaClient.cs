@@ -38,6 +38,15 @@ public sealed class MetaClient : IDisposable
         string? model = null,
         CancellationToken cancellationToken = default)
     {
+        ChatCompletionResult result = await ChatCompletionWithUsageAsync(messages, model, cancellationToken).ConfigureAwait(false);
+        return result.Content;
+    }
+
+    public async Task<ChatCompletionResult> ChatCompletionWithUsageAsync(
+        IReadOnlyList<ChatMessage> messages,
+        string? model = null,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(messages);
 
         string apiKey = MetaAuth.GetApiKey();
@@ -98,7 +107,17 @@ public sealed class MetaClient : IDisposable
             throw new MetaApiException($"Unexpected Meta Model API response shape: {preview}");
         }
 
-        return content;
+        string responseModel = parsed?.Model ?? resolvedModel;
+        TokenUsage? usage = null;
+        if (parsed?.Usage is not null)
+        {
+            usage = new TokenUsage(
+                parsed.Usage.PromptTokens,
+                parsed.Usage.CompletionTokens,
+                parsed.Usage.TotalTokens);
+        }
+
+        return new ChatCompletionResult(content, responseModel, usage);
     }
 
     /// <summary>
@@ -117,12 +136,109 @@ public sealed class MetaClient : IDisposable
         return ChatCompletionAsync(messages, cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// Generic translate with usage, used by TranslationService.
+    /// </summary>
+    public Task<ChatCompletionResult> TranslateWithUsageAsync(
+        string text,
+        string sourceLanguage,
+        string targetLanguage,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
+
+        string sourceDisplay = LanguageDisplayName(sourceLanguage);
+        string targetDisplay = LanguageDisplayName(targetLanguage);
+
+        IReadOnlyList<ChatMessage> messages =
+        [
+            new ChatMessage("system", $"You are a translation engine. Translate the user's text from {sourceDisplay} to {targetDisplay}. Output only the translation, with no quotes, notes, or explanation."),
+            new ChatMessage("user", text),
+        ];
+
+        return ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ModelInfo>> ListModelsAsync(CancellationToken cancellationToken = default)
+    {
+        string apiKey = MetaAuth.GetApiKey();
+        string baseUrl = MetaAuth.GetBaseUrl().TrimEnd('/');
+        string url = $"{baseUrl}/models";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new MetaApiException($"Meta Model API request failed: {ex.Message}", ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new MetaApiException("Meta Model API request timed out.", ex);
+        }
+
+        string body;
+        using (response)
+        {
+            body = response.Content is null
+                ? string.Empty
+                : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = body.Length > 500 ? body[..500] : body;
+                throw new MetaApiException($"Meta Model API HTTP {(int)response.StatusCode}: {detail}");
+            }
+        }
+
+        ModelsResponse? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<ModelsResponse>(body, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new MetaApiException($"Failed to parse models response: {body[..Math.Min(500, body.Length)]}", ex);
+        }
+
+        if (parsed?.Data is null)
+        {
+            return [];
+        }
+
+        return parsed.Data.Select(m => new ModelInfo(m.Id, m.Object, m.Created, m.OwnedBy)).ToArray();
+    }
+
     public void Dispose()
     {
         if (_ownsClient)
         {
             _httpClient.Dispose();
         }
+    }
+
+    private static string LanguageDisplayName(string code)
+    {
+        return code.Trim().ToLowerInvariant() switch
+        {
+            "en" => "English",
+            "es" => "Spanish",
+            "fr" => "French",
+            "de" => "German",
+            "pt" => "Portuguese",
+            "it" => "Italian",
+            "ja" => "Japanese",
+            "ko" => "Korean",
+            "zh" => "Chinese",
+            _ => code.Trim(),
+        };
     }
 
     // Wire format
@@ -136,8 +252,46 @@ public sealed class MetaClient : IDisposable
         [property: JsonPropertyName("content")] string Content);
 
     private sealed record ChatCompletionResponse(
-        [property: JsonPropertyName("choices")] ChatChoice[]? Choices);
+        [property: JsonPropertyName("id")] string? Id,
+        [property: JsonPropertyName("choices")] ChatChoice[]? Choices,
+        [property: JsonPropertyName("model")] string? Model,
+        [property: JsonPropertyName("usage")] UsageDto? Usage,
+        [property: JsonPropertyName("created")] long Created = 0,
+        [property: JsonPropertyName("object")] string? Object = null);
+
+    private sealed record UsageDto(
+        [property: JsonPropertyName("prompt_tokens")] int PromptTokens,
+        [property: JsonPropertyName("completion_tokens")] int CompletionTokens,
+        [property: JsonPropertyName("total_tokens")] int TotalTokens);
 
     private sealed record ChatChoice(
-        [property: JsonPropertyName("message")] ChatMessage? Message);
+        [property: JsonPropertyName("message")] ChatMessage? Message,
+        [property: JsonPropertyName("index")] int Index = 0,
+        [property: JsonPropertyName("finish_reason")] string? FinishReason = null);
+
+    private sealed record ModelsResponse(
+        [property: JsonPropertyName("object")] string? Object,
+        [property: JsonPropertyName("data")] ModelDto[]? Data);
+
+    private sealed record ModelDto(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("object")] string Object,
+        [property: JsonPropertyName("created")] long Created,
+        [property: JsonPropertyName("owned_by")] string OwnedBy);
+
+    public sealed record ChatCompletionResult(
+        string Content,
+        string Model,
+        TokenUsage? Usage);
+
+    public sealed record TokenUsage(
+        int PromptTokens,
+        int CompletionTokens,
+        int TotalTokens);
+
+    public sealed record ModelInfo(
+        string Id,
+        string Object,
+        long Created,
+        string OwnedBy);
 }
