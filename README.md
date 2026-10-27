@@ -1,34 +1,14 @@
-# Trackdub Live - Director Lane
+# Trackdub Director
 
-Hackathon build for the Meta AI Developer Hackathon (Oct 26 - Nov 4, 2026).
-This is a fresh, standalone public repository created for the event. All code
-in this repo is written during the hackathon build period.
+Standalone open-source app built for the Meta AI Developer Hackathon (Oct 26 - Nov 4, 2026). All code in this repo was written during the event. C# Core engine, ASP.NET Core host, React frontend.
 
 ## What is pre-existing
 
-- **Trackdub public core** - the existing Trackdub product and its public
-  codebase ([github.com/mesalimllc/Trackdub](https://github.com/mesalimllc/Trackdub)).
-  It predates this hackathon, is **not** part of this submission, and is not
-  copied into this repo. This project references it as a dependency / pipeline
-  stage boundary only. The core is .NET 10 and this repo mirrors its solution
-  layout, CLI structure, and naming conventions.
-- The gated Trackdub shell is used as the demo stage only. It is not part of
-  this repo or the submission.
+- **Trackdub** — the author's prior project ([github.com/mesalimllc/Trackdub](https://github.com/mesalimllc/Trackdub)). It predates this hackathon and is not part of this submission.
 
-## What will be built this week (in this repo)
+## What this app is
 
-The Director Lane: Meta-model stages that sit alongside the existing
-Trackdub pipeline.
-
-- Meta Model API wiring + CLI entry point
-- Translation lane with provenance and metering preserved
-- QA / timing rewrite loop (bounce-back revisions with a pass-rate harness)
-- Director mode: scene context driving register adaptation
-- Audition casting: multiple takes per line, scored and auto-picked
-- Muse Image visual localisation of on-screen text
-
-No greenfield web app, no live/streaming dub. Pipeline stages with one real
-feedback loop (the QA/timing bounce-back).
+A local dubbing workbench: a translation lane with provenance and metering, a deterministic QA/timing loop that bounces failures back to the model for revision, and a web UI to run both and inspect results — all backed by the Meta Model API (`muse-spark-1.1` via `https://api.meta.ai/v1`).
 
 ## Status
 
@@ -43,7 +23,7 @@ duration estimator (`chars / CPS`) checks each translation against its window,
 bouncing failures back to the model with "preserve meaning, fit X seconds, at
 most N chars" and re-checking up to 3 attempts. See QA / timing loop below.
 
-Day 4 (Oct 26): New shell, a local web app. ASP.NET Core host exposes Core
+Day 4 (Oct 26): Local web app. ASP.NET Core host exposes Core
 over HTTP; React + TypeScript frontend. `src/Trackdub.Director.Server` serves
 the UI and the API from one process; `web/` is the Vite app.
 
@@ -285,7 +265,4 @@ global.json                    Pins .NET 10 SDK
 ## Honest history
 
 - Day 1-3: Core, translation lane, QA/timing loop, CLI harness — pushed to main.
-- Day 4: This repo grew a local web shell per owner direction (no Tauri/Avalonia,
-  no Core behavior changes). `Trackdub.Director.Server` is a thin HTTP wrapper;
-  `web/` is a single-screen Vite app that proxies `/api` in dev and builds into
-  `wwwroot` for single-command runs.
+- Day 4: Local web app — `Trackdub.Director.Server` (thin HTTP wrapper over Core) and `web/` (single-screen Vite app; proxies `/api` in dev, builds into `wwwroot` for single-command runs). No Tauri/Avalonia, no Core behavior changes.
