@@ -10,3 +10,5 @@ obj/
 .remember/
 samples/translated.json
 samples/qa-report.json
+node_modules/
+web/dist/

@@ -43,9 +43,44 @@ duration estimator (`chars / CPS`) checks each translation against its window,
 bouncing failures back to the model with "preserve meaning, fit X seconds, at
 most N chars" and re-checking up to 3 attempts. See QA / timing loop below.
 
+Day 4 (Oct 26): New shell, a local web app. ASP.NET Core host exposes Core
+over HTTP; React + TypeScript frontend. `src/Trackdub.Director.Server` serves
+the UI and the API from one process; `web/` is the Vite app.
+
+## Architecture
+
+```
+Trackdub.Director.slnx
+src/Trackdub.Director.Core/      Class library: MetaAuth (env-only auth),
+                                  MetaClient (POST /chat/completions + GET /models
+                                  against https://api.meta.ai/v1), TranslationService,
+                                  DurationEstimator, QaService/QaOptions, QaModels.
+                                  No third-party packages; HttpClient + System.Text.Json only.
+                                  API keys are never read from files and never logged.
+src/Trackdub.Director.Server/    ASP.NET Core minimal API referencing Core.
+                                  GET /api/status, GET /api/models,
+                                  POST /api/translate, POST /api/qa.
+                                  Serves web/dist output from wwwroot in production;
+                                  no key required to start; key only gates live endpoints.
+src/Trackdub.Director.Cli/       Console app (trackdub-director): smoke / translate / models / qa.
+web/                             React + Vite + TypeScript frontend. One screen:
+                                  header (app name, key status, model, QA summary),
+                                  line list (source, translation, window vs estimate,
+                                  verdict, attempt count, expandable attempts),
+                                  Run Translate / Run QA, file picker (sample loaded by default).
+                                  Dev proxy: Vite forwards /api to :5103.
+tests/Trackdub.Director.Tests/   xUnit. Live tests skipped without key; fake-handler
+                                  estimator/QA tests; server endpoint tests (WebApplicationFactory).
+samples/segments.json            8-line sample with duration_seconds.
+```
+
+The server reuses Core shapes directly — `TranslationBatchOutput`, `QaReport`,
+etc. — so the JSON the UI receives from `POST /api/qa` is the same shape the
+CLI writes to `qa-report.json`.
+
 ## Setup
 
-Requires .NET 10 SDK (10.0.300+; pinned via `global.json`).
+Requires .NET 10 SDK (10.0.300+; pinned via `global.json`) and Node 18+ for the frontend.
 
 Set the Meta Model API key in your environment. Never commit a key to this
 repo; `.env` is gitignored and `.env.example` holds placeholders only.
@@ -66,6 +101,42 @@ Optional overrides: `META_MODEL` (default `muse-spark-1.1`),
 `META_MODEL_API_BASE_URL` (default `https://api.meta.ai/v1`),
 `META_REASONING_EFFORT` (default `low`; accepted `low|medium|high`).
 `META_MODEL_API_KEY` is accepted as a fallback for `META_API_KEY`.
+
+## Running the app
+
+### Single-command mode (prod-like)
+
+Build the frontend into the server's `wwwroot`, then run the server:
+
+```bash
+cd web && npm install && npm run build && cd ..
+dotnet run --project src/Trackdub.Director.Server
+# open http://localhost:5103
+```
+
+The built frontend is served from `src/Trackdub.Director.Server/wwwroot/`; one
+`dotnet run` is the whole app. No key is required to start — the UI loads and
+`GET /api/status` reports `hasKey: false` until a key is configured. Live
+endpoints (`POST /api/translate`, `POST /api/qa`, `GET /api/models`) return
+401/502 with a safe error when no key is set.
+
+### Development mode (Vite + backend)
+
+Two terminals:
+
+```bash
+# Terminal 1 — backend on :5103
+dotnet run --project src/Trackdub.Director.Server
+
+# Terminal 2 — frontend on :5173 with /api proxy to :5103
+cd web && npm install && npm run dev
+# open http://localhost:5173
+```
+
+Vite config (`web/vite.config.ts`) proxies `http://localhost:5173/api/*` to
+`http://localhost:5103`, so the dev UI talks to the same API.
+
+To refresh the prod bundle after frontend changes: `cd web && npm run build`.
 
 ## Smoke test
 
@@ -167,26 +238,54 @@ all attempts. A non-zero gap between first-pass and final shows the loop
 working; a final pass rate below 100% means at least one line was reported as
 `Fail` after exhausting attempts.
 
+## Server API
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/status` | none | `{ hasKey, model, baseUrl, reasoningEffort }` — never the key |
+| GET | `/api/models` | key | Account models (proxies `GET /models`) |
+| POST | `/api/translate` | key | `{ segments, sourceLanguage?, targetLanguage? }` → `TranslationBatchOutput` |
+| POST | `/api/qa` | key | `{ segments, sourceLanguage?, targetLanguage?, options? }` → `QaReport` (same JSON as CLI report) |
+
+`POST` bodies accept `segments` as `[{ id, text, duration_seconds? }]` plus
+optional `sourceLanguage`/`source_language`/`from` and
+`targetLanguage`/`target_language`/`to` (default `en` → `es`). `POST /api/qa`
+also accepts `options: { maxAttempts, toleranceFraction, targetCharactersPerSecond, reasoningEffort }`.
+
 ## Tests
 
 ```bash
 dotnet test
+cd web && npm test
 ```
 
-Live tests (smoke, translation batch, QA) run only when a Meta API key is
+Live .NET tests (smoke, translation batch, QA) run only when a Meta API key is
 present; otherwise they return early (skipped, not failed) so the suite stays
 green offline. Deterministic tests use a fake HTTP handler: estimator unit
 tests, a line that passes first try, a line that fails then passes on revision,
-and a line that never fits and is reported failed after max attempts.
+and a line that never fits and is reported failed after max attempts. Server
+endpoint tests use `WebApplicationFactory` with the same fake handler.
+
+Frontend: one Vitest smoke test rendering the line list from a mocked API response.
 
 ## Layout
 
 ```text
 Trackdub.Director.slnx
 src/Trackdub.Director.Core/    Class library: Meta Model API client, translation, duration estimator, QA loop
+src/Trackdub.Director.Server/  ASP.NET Core host exposing Core over HTTP + serving the built frontend from wwwroot
 src/Trackdub.Director.Cli/     Console app: smoke / translate / models / qa subcommands
-tests/Trackdub.Director.Tests/ xUnit tests (live tests skipped without key; fake-handler estimator/QA tests)
+web/                           React + Vite + TypeScript frontend (one screen)
+tests/Trackdub.Director.Tests/ xUnit tests + server endpoint tests
 samples/segments.json           8-line sample input with duration_seconds for the qa command
 .env.example                   Placeholder config - no real keys
 global.json                    Pins .NET 10 SDK
 ```
+
+## Honest history
+
+- Day 1-3: Core, translation lane, QA/timing loop, CLI harness — pushed to main.
+- Day 4: This repo grew a local web shell per owner direction (no Tauri/Avalonia,
+  no Core behavior changes). `Trackdub.Director.Server` is a thin HTTP wrapper;
+  `web/` is a single-screen Vite app that proxies `/api` in dev and builds into
+  `wwwroot` for single-command runs.
