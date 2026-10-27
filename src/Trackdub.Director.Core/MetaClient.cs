@@ -53,7 +53,8 @@ public sealed class MetaClient : IDisposable
         string baseUrl = MetaAuth.GetBaseUrl();
         string resolvedModel = string.IsNullOrWhiteSpace(model) ? MetaAuth.GetModel() : model.Trim();
 
-        var payload = new ChatCompletionRequest(resolvedModel, messages.ToArray());
+        string? reasoningEffort = NormalizeReasoningEffort(MetaAuth.GetReasoningEffort());
+        var payload = new ChatCompletionRequest(resolvedModel, messages.ToArray(), reasoningEffort);
 
         string json = JsonSerializer.Serialize(payload, JsonOptions);
         string url = $"{baseUrl}/chat/completions";
@@ -224,6 +225,47 @@ public sealed class MetaClient : IDisposable
         }
     }
 
+    internal static string? NormalizeReasoningEffort(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        string v = raw.Trim().ToLowerInvariant();
+        return v is "low" or "medium" or "high" ? v : null;
+    }
+
+    /// <summary>
+    /// Revision call for the QA bounce-back: shorten a translation to fit a timing window.
+    /// Preserves meaning; instructs the model to keep the output under maxChars.
+    /// </summary>
+    public Task<ChatCompletionResult> ReviseTranslationForTimingAsync(
+        string sourceText,
+        string currentTranslation,
+        string sourceLanguage,
+        string targetLanguage,
+        double windowSeconds,
+        int maxChars,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceText);
+        ArgumentException.ThrowIfNullOrWhiteSpace(currentTranslation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
+
+        string sourceDisplay = LanguageDisplayName(sourceLanguage);
+        string targetDisplay = LanguageDisplayName(targetLanguage);
+
+        IReadOnlyList<ChatMessage> messages =
+        [
+            new ChatMessage("system", $"You are a translation engine. Revise the {targetDisplay} translation of the given {sourceDisplay} line so it preserves the meaning but fits a dubbing window of approximately {windowSeconds:0.0#} seconds. Keep the output at most {maxChars} characters. Output only the revised translation, with no quotes, notes, or explanation."),
+            new ChatMessage("user", $"Original {sourceDisplay}: {sourceText}\nCurrent {targetDisplay} ({currentTranslation.Length} chars): {currentTranslation}\nRewrite it shorter, at most {maxChars} characters, preserving meaning."),
+        ];
+
+        return ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken);
+    }
+
     private static string LanguageDisplayName(string code)
     {
         return code.Trim().ToLowerInvariant() switch
@@ -245,7 +287,8 @@ public sealed class MetaClient : IDisposable
 
     private sealed record ChatCompletionRequest(
         [property: JsonPropertyName("model")] string Model,
-        [property: JsonPropertyName("messages")] ChatMessage[] Messages);
+        [property: JsonPropertyName("messages")] ChatMessage[] Messages,
+        [property: JsonPropertyName("reasoning_effort")] string? ReasoningEffort = null);
 
     public sealed record ChatMessage(
         [property: JsonPropertyName("role")] string Role,

@@ -26,13 +26,14 @@ static async Task<int> RunAsync(string[] args)
         "smoke" => await RunSmokeAsync(args[1..]).ConfigureAwait(false),
         "translate" => await RunTranslateAsync(args[1..]).ConfigureAwait(false),
         "models" => await RunModelsAsync(args[1..]).ConfigureAwait(false),
+        "qa" => await QaCli.RunAsync(args[1..]).ConfigureAwait(false),
         _ => UnknownCommand(args[0]),
     };
 }
 
 static int UnknownCommand(string raw)
 {
-    Console.Error.WriteLine($"Unknown command '{raw}'. Expected 'smoke', 'translate', or 'models'.");
+    Console.Error.WriteLine($"Unknown command '{raw}'. Expected 'smoke', 'translate', 'models', or 'qa'.");
     PrintUsage();
     return 1;
 }
@@ -232,6 +233,7 @@ static void PrintUsage()
     Console.WriteLine("  smoke      Smoke test: one real Meta Model API call, English to Spanish.");
     Console.WriteLine("  translate  Batch translate a segments JSON file.");
     Console.WriteLine("  models     List models available to this account (GET /models).");
+    Console.WriteLine("  qa         Translate + timing QA loop (bounce-back revisions with report).");
     Console.WriteLine();
     Console.WriteLine("Options:");
     Console.WriteLine("  -h, --help   Show help.");

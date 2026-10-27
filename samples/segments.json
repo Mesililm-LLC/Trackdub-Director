@@ -1,10 +1,42 @@
 [
-  { "id": "seg-001", "text": "The director checks every line before it reaches the audience." },
-  { "id": "seg-002", "text": "We need one more take." },
-  { "id": "seg-003", "text": "Action!" },
-  { "id": "seg-004", "text": "That was perfect. Let us move on." },
-  { "id": "seg-005", "text": "Quiet on set, please." },
-  { "id": "seg-006", "text": "Where are we shooting tomorrow?" },
-  { "id": "seg-007", "text": "Thank you for joining us today." },
-  { "id": "seg-008", "text": "We will see you on the next stage." }
+  {
+    "id": "seg-001",
+    "text": "The director checks every line before it reaches the audience.",
+    "duration_seconds": 4.6
+  },
+  {
+    "id": "seg-002",
+    "text": "We need one more take.",
+    "duration_seconds": 1.4
+  },
+  {
+    "id": "seg-003",
+    "text": "Action!",
+    "duration_seconds": 0.6
+  },
+  {
+    "id": "seg-004",
+    "text": "That was perfect. Let us move on.",
+    "duration_seconds": 2.4
+  },
+  {
+    "id": "seg-005",
+    "text": "Quiet on set, please.",
+    "duration_seconds": 1.0
+  },
+  {
+    "id": "seg-006",
+    "text": "Where are we shooting tomorrow?",
+    "duration_seconds": 1.6
+  },
+  {
+    "id": "seg-007",
+    "text": "Thank you for joining us today.",
+    "duration_seconds": 1.2
+  },
+  {
+    "id": "seg-008",
+    "text": "We will see you on the next stage.",
+    "duration_seconds": 2.0
+  }
 ]

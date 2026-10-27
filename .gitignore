@@ -9,3 +9,4 @@ obj/
 .ionide/
 .remember/
 samples/translated.json
+samples/qa-report.json

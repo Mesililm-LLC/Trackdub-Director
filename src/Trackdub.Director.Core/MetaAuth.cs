@@ -10,9 +10,11 @@ public static class MetaAuth
     public const string FallbackApiKeyEnv = "META_MODEL_API_KEY";
     public const string BaseUrlEnv = "META_MODEL_API_BASE_URL";
     public const string ModelEnv = "META_MODEL";
+    public const string ReasoningEffortEnv = "META_REASONING_EFFORT";
 
     public const string DefaultBaseUrl = "https://api.meta.ai/v1";
     public const string DefaultModel = "muse-spark-1.1";
+    public const string DefaultReasoningEffort = "low";
 
     public static string GetApiKey()
     {
@@ -47,5 +49,16 @@ public static class MetaAuth
     {
         string? raw = Environment.GetEnvironmentVariable(ModelEnv);
         return string.IsNullOrWhiteSpace(raw) ? DefaultModel : raw.Trim();
+    }
+
+    public static string? GetReasoningEffort()
+    {
+        string? raw = Environment.GetEnvironmentVariable(ReasoningEffortEnv);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return DefaultReasoningEffort;
+        }
+
+        return raw.Trim().ToLowerInvariant();
     }
 }

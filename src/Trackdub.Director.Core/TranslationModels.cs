@@ -8,7 +8,8 @@ namespace Trackdub.Director.Core;
 /// </summary>
 public sealed record TranslationSegmentInput(
     [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("text")] string Text);
+    [property: JsonPropertyName("text")] string Text,
+    [property: JsonPropertyName("duration_seconds")] double? DurationSeconds = null);
 
 /// <summary>
 /// Output file: batch result with per-segment provenance and usage.
