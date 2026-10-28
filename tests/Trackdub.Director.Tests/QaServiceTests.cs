@@ -430,7 +430,7 @@ public sealed class QaServiceTests
         {
             Assert.Contains("Fix the listed meaning issues and restore lost meaning", prompt, StringComparison.Ordinal);
             Assert.Contains("without shortening further than necessary", prompt, StringComparison.Ordinal);
-            Assert.Contains("all listed issues must be fixed", prompt, StringComparison.Ordinal);
+            Assert.Contains("restore the lost meaning", prompt, StringComparison.Ordinal);
             Assert.Contains($"at most {seg.FirstAttempt.MaxChars} characters", prompt, StringComparison.Ordinal);
             Assert.DoesNotContain("Rewrite it shorter", prompt, StringComparison.Ordinal);
         });
