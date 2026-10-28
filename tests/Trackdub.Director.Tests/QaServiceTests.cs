@@ -387,6 +387,108 @@ public sealed class QaServiceTests
     }
 
     [Fact]
+    public async Task Meaning_feedback_survives_timing_failure_and_is_replaced_by_next_meaning_failure()
+    {
+        using var _ = FakeAuth();
+
+        var translations = new Queue<string>([
+            "Una toma mas.",
+            "Necesitamos una toma mas larga que no cabe en la ventana de tiempo",
+            "Otra toma.",
+            "Necesitamos otra toma.",
+        ]);
+        var meanings = new Queue<string>([
+            MeaningFailJson(["dropped modality"], "Need was lost."),
+            MeaningFailJson(["dropped subject"], "Subject was lost."),
+            MeaningPassJson(),
+        ]);
+        var revisionPrompts = new List<string>();
+        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings,
+            inspectRevisionBody: body =>
+            {
+                using JsonDocument doc = JsonDocument.Parse(body);
+                revisionPrompts.Add(doc.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!);
+            }));
+        using var client = new MetaClient(http);
+        var svc = new QaService(client, new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 });
+
+        QaReport report = await svc.RunAsync([new QaSegmentInput("feedback", "We need one more take.", 1.4)], "en", "es");
+
+        QaSegmentReport seg = report.Segments[0];
+        Assert.Equal(MeaningVerdict.Fail, seg.FirstAttempt.MeaningVerdict);
+        Assert.Equal(3, seg.Revisions.Length);
+        Assert.Equal(MeaningVerdict.NotEvaluated, seg.Revisions[0].MeaningVerdict);
+        Assert.Equal(MeaningVerdict.Fail, seg.Revisions[1].MeaningVerdict);
+        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[2].MeaningVerdict);
+        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
+        Assert.Equal(3, revisionPrompts.Count);
+        Assert.Contains("dropped modality", revisionPrompts[0], StringComparison.Ordinal);
+        Assert.Contains("dropped modality", revisionPrompts[1], StringComparison.Ordinal);
+        Assert.Contains("dropped subject", revisionPrompts[2], StringComparison.Ordinal);
+        Assert.DoesNotContain("dropped modality", revisionPrompts[2], StringComparison.Ordinal);
+        Assert.All(revisionPrompts, prompt =>
+        {
+            Assert.Contains("Fix the listed meaning issues and restore lost meaning", prompt, StringComparison.Ordinal);
+            Assert.Contains("without shortening further than necessary", prompt, StringComparison.Ordinal);
+            Assert.Contains("all listed issues must be fixed", prompt, StringComparison.Ordinal);
+            Assert.Contains($"at most {seg.FirstAttempt.MaxChars} characters", prompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("Rewrite it shorter", prompt, StringComparison.Ordinal);
+        });
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("42")]
+    [InlineData("\"pass\"")]
+    public async Task Non_object_meaning_response_allows_revision(string raw)
+    {
+        using var _ = FakeAuth();
+
+        var translations = new Queue<string>(["Hola.", "Hola."]);
+        var meanings = new Queue<string>([raw, MeaningPassJson()]);
+        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings));
+        using var client = new MetaClient(http);
+        var svc = new QaService(client, new QaOptions { MaxAttempts = 1 });
+
+        QaReport report = await svc.RunAsync([new QaSegmentInput("invalid-root", "Hello.", 4.2)], "en", "es");
+
+        QaSegmentReport seg = report.Segments[0];
+        Assert.Equal(MeaningVerdict.Fail, seg.FirstAttempt.MeaningVerdict);
+        Assert.Equal(new[] { "unparseable meaning response" }, seg.FirstAttempt.MeaningIssues);
+        Assert.Single(seg.Revisions);
+        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[0].MeaningVerdict);
+        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Revision_without_meaning_issues_still_requests_shorter_translation(string? issue)
+    {
+        using var _ = FakeAuth();
+
+        string? userPrompt = null;
+        using var http = new HttpClient(DualHandler("muse-spark-1.1", new Queue<string>(["Hola."]), new Queue<string>(),
+            inspectRevisionBody: body =>
+            {
+                using JsonDocument doc = JsonDocument.Parse(body);
+                userPrompt = doc.RootElement.GetProperty("messages")[1].GetProperty("content").GetString();
+            }));
+        using var client = new MetaClient(http);
+
+        await client.ReviseTranslationForTimingAsync("Hello.", "Hola a todos.", "en", "es", 1.0, 15,
+            meaningIssues: issue is null ? null : [issue]);
+
+        Assert.NotNull(userPrompt);
+        Assert.Contains("Rewrite it shorter, at most 15 characters, preserving meaning.", userPrompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("Material meaning issues", userPrompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("restore lost meaning", userPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Regression_exhaustion_ends_failed()
     {
         using var _ = FakeAuth();
