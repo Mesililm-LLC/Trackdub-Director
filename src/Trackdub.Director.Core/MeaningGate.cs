@@ -119,16 +119,29 @@ public static class MeaningGate
                 verdictRaw = vEl.ValueKind == JsonValueKind.String ? vEl.GetString() : null;
             }
 
+            // Fail closed when the issues field is present but malformed: a wrong-typed or
+            // non-string element array must never silently degrade to "no issues", which would
+            // turn a reported meaning loss into a pass.
             string[] issues = [];
-            if (root.TryGetProperty("issues", out JsonElement issuesEl) && issuesEl.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("issues", out JsonElement issuesEl))
             {
+                if (issuesEl.ValueKind != JsonValueKind.Array)
+                {
+                    throw new JsonException("Meaning response 'issues' must be an array of strings.");
+                }
+
                 var list = new List<string>();
                 foreach (JsonElement e in issuesEl.EnumerateArray())
                 {
-                    if (e.ValueKind == JsonValueKind.String)
+                    if (e.ValueKind != JsonValueKind.String)
                     {
-                        string? s = e.GetString();
-                        if (!string.IsNullOrWhiteSpace(s)) list.Add(s.Trim());
+                        throw new JsonException("Meaning response 'issues' elements must be strings.");
+                    }
+
+                    string? s = e.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        list.Add(s.Trim());
                     }
                 }
 

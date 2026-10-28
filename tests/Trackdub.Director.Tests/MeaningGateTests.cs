@@ -71,6 +71,45 @@ public sealed class MeaningGateTests
         Assert.Equal(MeaningVerdict.Pass, r.Verdict);
     }
 
+    /// <summary>
+    /// A wrong-typed issues field must never degrade to "no issues": that would turn a reported
+    /// meaning loss into a pass and let a timing-only translation through the gate.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"verdict\":\"pass\",\"issues\":\"dropped negation\",\"explanation\":\"x\"}")]
+    [InlineData("{\"verdict\":\"pass\",\"issues\":null,\"explanation\":\"x\"}")]
+    [InlineData("{\"verdict\":\"pass\",\"issues\":{\"note\":\"dropped negation\"},\"explanation\":\"x\"}")]
+    [InlineData("{\"verdict\":\"pass\",\"issues\":[1,2],\"explanation\":\"x\"}")]
+    [InlineData("{\"verdict\":\"pass\",\"issues\":[\"dropped negation\",true],\"explanation\":\"x\"}")]
+    [InlineData("{\"verdict\":\"pass\",\"issues\":[null],\"explanation\":\"x\"}")]
+    public void Parse_malformed_issues_fails_closed(string raw)
+    {
+        MeaningCheckResult r = MeaningGate.ParseAndNormalize(raw, "muse-spark-1.1", Usage, "api.meta.ai");
+
+        Assert.Equal(MeaningVerdict.Fail, r.Verdict);
+        Assert.Equal(new[] { "unparseable meaning response" }, r.Issues);
+        Assert.Contains("failing closed", r.Explanation, StringComparison.Ordinal);
+        Assert.Equal(raw, r.RawContent);
+    }
+
+    [Fact]
+    public void Parse_absent_issues_field_still_allows_pass()
+    {
+        // Omitting the field entirely is not malformed; only a present-but-wrong value is.
+        MeaningCheckResult r = MeaningGate.ParseAndNormalize("{\"verdict\":\"pass\",\"explanation\":\"ok\"}", "muse-spark-1.1", null, "api.meta.ai");
+        Assert.Equal(MeaningVerdict.Pass, r.Verdict);
+        Assert.Empty(r.Issues);
+    }
+
+    [Fact]
+    public void Parse_blank_string_issues_are_ignored_not_failed()
+    {
+        MeaningCheckResult r = MeaningGate.ParseAndNormalize(
+            "{\"verdict\":\"pass\",\"issues\":[\"\",\"   \"],\"explanation\":\"ok\"}", "muse-spark-1.1", null, "api.meta.ai");
+        Assert.Equal(MeaningVerdict.Pass, r.Verdict);
+        Assert.Empty(r.Issues);
+    }
+
     [Fact]
     public void Parse_wrapped_in_prose_extracted()
     {

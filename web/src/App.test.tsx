@@ -1,6 +1,14 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import App from "./App";
+
+// Locate a segment card by its id so gate pills can be asserted per attempt.
+function getCard(segId: string): HTMLElement {
+  const id = screen.getByText(segId);
+  const card = id.closest("article");
+  if (!card) throw new Error(`No card found for ${segId}`);
+  return card as HTMLElement;
+}
 
 // Mock sampleSegments so the test controls what the UI sees before any API call
 vi.mock("./sampleSegments.json", () => ({
@@ -182,13 +190,76 @@ describe("App smoke", () => {
     expandButtons[1].click();
     expect(await screen.findByText("Accion larguisima que no cabe")).toBeInTheDocument();
     expect(screen.getAllByText("Accion!").length).toBeGreaterThanOrEqual(1);
-    // Timing and Meaning pills visible; skipped meaning renders as "Not checked", never Pass.
-    // seg-001 passed meaning (1 "Meaning: Pass" pill); seg-002 skipped it (1 "Not checked" pill).
-    expect(screen.getByText("Timing: Fail")).toBeInTheDocument();
-    expect(screen.getAllByText("Meaning: Pass")).toHaveLength(1);
-    expect(screen.getAllByText("Meaning: Not checked")).toHaveLength(1);
-    // The attempt row for the timing-fail attempt also renders "Not checked" (not "Pass")
-    expect(screen.getAllByText("Not checked")).toHaveLength(1);
+    // seg-001 passed first time: its card shows passing gates.
+    const seg1 = getCard("seg-001");
+    expect(within(seg1).getByText("Timing: Pass")).toBeInTheDocument();
+    expect(within(seg1).getByText("Meaning: Pass")).toBeInTheDocument();
+
+    // seg-002 was bounced back and its revision passed: the pill next to the shown translation
+    // must describe that final attempt, not the initial one that failed timing.
+    const seg2 = getCard("seg-002");
+    // Shown both as the card translation and inside the attempt details row.
+    expect(within(seg2).getAllByText("Accion!").length).toBeGreaterThanOrEqual(1);
+    expect(within(seg2).getByText("Timing: Pass")).toBeInTheDocument();
+    expect(within(seg2).getByText("Meaning: Pass")).toBeInTheDocument();
+    // The abandoned first attempt is never presented as the card's gate outcome.
+    expect(within(seg2).queryByText("Timing: Fail")).not.toBeInTheDocument();
+    expect(within(seg2).queryByText("Meaning: Not checked")).not.toBeInTheDocument();
+    // The early failing attempt is still visible inside the attempt details.
+    expect(within(seg2).getByText("Not checked")).toBeInTheDocument();
+  });
+
+  it("shows Not checked for a segment whose final attempt failed timing", async () => {
+    // A later revision that overruns the window is the displayed attempt, so its skipped
+    // meaning check must surface as "Not checked" rather than inheriting the initial Pass.
+    const neverFits = {
+      ...qaMock,
+      segments: [
+        {
+          ...qaMock.segments[1],
+          first_attempt: {
+            ...qaMock.segments[1].first_attempt,
+            translation: "Hola.",
+            timing_verdict: "Pass",
+            meaning_verdict: "Pass",
+            meaning_explanation: "Meaning preserved.",
+            verdict: "Pass",
+          },
+          revisions: [
+            {
+              ...qaMock.segments[1].revisions[0],
+              translation: "Accion demasiado larga que no cabe",
+              timing_verdict: "Fail",
+              meaning_verdict: "NotEvaluated",
+              meaning_issues: null,
+              meaning_explanation: null,
+              verdict: "Fail",
+            },
+          ],
+          final_verdict: "Fail",
+          final_translation: "Accion demasiado larga que no cabe",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/qa")) return new Response(JSON.stringify(neverFits), { status: 200 });
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    screen.getByRole("button", { name: "Run QA" }).click();
+    await waitFor(() => expect(screen.getByText("Accion demasiado larga que no cabe")).toBeInTheDocument());
+
+    const card = getCard("seg-002");
+    expect(within(card).getByText("Timing: Fail")).toBeInTheDocument();
+    expect(within(card).getByText("Meaning: Not checked")).toBeInTheDocument();
+    // The initial passing attempt must not be presented as the card's outcome.
+    expect(within(card).queryByText("Meaning: Pass")).not.toBeInTheDocument();
   });
 
   it("shows meaning issues in attempt details when present", async () => {

@@ -217,7 +217,10 @@ export default function App() {
             const windowSec = q?.window_seconds ?? seg.duration_seconds ?? null;
             const verdict = q?.final_verdict ?? null;
             const firstVerdict = q?.first_attempt.verdict ?? null;
-            const estimated = q ? q.first_attempt.estimated_seconds : null;
+            // Gate pills and the estimate must describe the translation shown (the final attempt),
+            // not the initial one; otherwise a successful bounce-back displays failing gates.
+            const shownAttempt = q ? (q.revisions.length > 0 ? q.revisions[q.revisions.length - 1] : q.first_attempt) : null;
+            const estimated = shownAttempt ? shownAttempt.estimated_seconds : null;
             const attemptCount = q ? 1 + q.revisions.length : translated ? 1 : 0;
             const isExpanded = expanded[seg.id] ?? false;
 
@@ -232,20 +235,20 @@ export default function App() {
                   <div className="line-meta">
                     <span className="meta-pill" title="Timing window vs estimated duration">
                       {windowSec != null ? `window ${fmtSec(windowSec)}` : "window —"}
-                      {estimated != null ? ` · est ${fmtSec(estimated)}` : q ? ` · est ${fmtSec(q.first_attempt.estimated_seconds)}` : ""}
+                      {estimated != null ? ` · est ${fmtSec(estimated)}` : ""}
                     </span>
-                    {q ? (
+                    {q && shownAttempt ? (
                       <>
-                        <span className={`verdict verdict-${q.first_attempt.timing_verdict.toLowerCase()}`} title="Timing gate">
-                          Timing: {q.first_attempt.timing_verdict}
+                        <span className={`verdict verdict-${shownAttempt.timing_verdict.toLowerCase()}`} title={`Timing gate (attempt #${shownAttempt.attempt_number})`}>
+                          Timing: {shownAttempt.timing_verdict}
                         </span>
-                        {q.first_attempt.meaning_verdict === "NotEvaluated" ? (
-                          <span className="verdict verdict-notevaluated" title="Meaning not checked (timing failed)">
+                        {shownAttempt.meaning_verdict === "NotEvaluated" ? (
+                          <span className="verdict verdict-notevaluated" title={`Not checked (timing failed, attempt #${shownAttempt.attempt_number})`}>
                             Meaning: Not checked
                           </span>
                         ) : (
-                          <span className={`verdict verdict-${q.first_attempt.meaning_verdict.toLowerCase()}`} title="Meaning gate">
-                            Meaning: {q.first_attempt.meaning_verdict}
+                          <span className={`verdict verdict-${shownAttempt.meaning_verdict.toLowerCase()}`} title={`Meaning gate (attempt #${shownAttempt.attempt_number})`}>
+                            Meaning: {shownAttempt.meaning_verdict}
                           </span>
                         )}
                         <span className={`verdict verdict-${(verdict ?? "idle").toLowerCase()}`} title="Combined verdict">
