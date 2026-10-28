@@ -277,7 +277,7 @@ public sealed class MetaClient : IDisposable
             string joined = string.Join("; ", meaningIssues.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
             if (!string.IsNullOrWhiteSpace(joined))
             {
-                issuesLine = $"\nMaterial meaning issues to fix (all listed issues must be fixed): {joined}";
+                issuesLine = $"\nMaterial meaning issues to fix (restore the lost meaning): {joined}";
             }
         }
 
