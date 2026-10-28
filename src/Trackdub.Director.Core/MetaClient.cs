@@ -277,14 +277,18 @@ public sealed class MetaClient : IDisposable
             string joined = string.Join("; ", meaningIssues.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
             if (!string.IsNullOrWhiteSpace(joined))
             {
-                issuesLine = $"\nMaterial meaning issues to fix (do not drop or alter): {joined}";
+                issuesLine = $"\nMaterial meaning issues to fix (all listed issues must be fixed): {joined}";
             }
         }
+
+        string revisionInstruction = string.IsNullOrEmpty(issuesLine)
+            ? $"Rewrite it shorter, at most {maxChars} characters, preserving meaning."
+            : $"Fix the listed meaning issues and restore lost meaning, at most {maxChars} characters, without shortening further than necessary.";
 
         IReadOnlyList<ChatMessage> messages =
         [
             new ChatMessage("system", $"You are a translation engine. Revise the {targetDisplay} translation of the given {sourceDisplay} line so it preserves the meaning but fits a dubbing window of approximately {windowSeconds:0.0#} seconds. Keep the output at most {maxChars} characters. Output only the revised translation, with no quotes, notes, or explanation."),
-            new ChatMessage("user", $"Original {sourceDisplay}: {sourceText}\nCurrent {targetDisplay} ({currentTranslation.Length} chars): {currentTranslation}\nRewrite it shorter, at most {maxChars} characters, preserving meaning.{issuesLine}"),
+            new ChatMessage("user", $"Original {sourceDisplay}: {sourceText}\nCurrent {targetDisplay} ({currentTranslation.Length} chars): {currentTranslation}\n{revisionInstruction}{issuesLine}"),
         ];
 
         return ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken);

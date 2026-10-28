@@ -196,7 +196,10 @@ public sealed class QaService
                 break;
             }
 
-            lastMeaningIssues = revAttempt.MeaningVerdict == MeaningVerdict.Fail ? revAttempt.MeaningIssues : null;
+            if (revAttempt.MeaningVerdict == MeaningVerdict.Fail)
+            {
+                lastMeaningIssues = revAttempt.MeaningIssues;
+            }
         }
 
         return new QaSegmentReport(
