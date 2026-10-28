@@ -239,6 +239,7 @@ public sealed class MetaClient : IDisposable
     /// <summary>
     /// Revision call for the QA bounce-back: shorten a translation to fit a timing window.
     /// Preserves meaning; instructs the model to keep the output under maxChars.
+    /// When meaningIssues is provided, they are injected as feedback to fix.
     /// </summary>
     public Task<ChatCompletionResult> ReviseTranslationForTimingAsync(
         string sourceText,
@@ -249,6 +250,19 @@ public sealed class MetaClient : IDisposable
         int maxChars,
         CancellationToken cancellationToken = default)
     {
+        return ReviseTranslationForTimingAsync(sourceText, currentTranslation, sourceLanguage, targetLanguage, windowSeconds, maxChars, meaningIssues: null, cancellationToken);
+    }
+
+    public Task<ChatCompletionResult> ReviseTranslationForTimingAsync(
+        string sourceText,
+        string currentTranslation,
+        string sourceLanguage,
+        string targetLanguage,
+        double windowSeconds,
+        int maxChars,
+        IReadOnlyList<string>? meaningIssues,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceText);
         ArgumentException.ThrowIfNullOrWhiteSpace(currentTranslation);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
@@ -257,13 +271,63 @@ public sealed class MetaClient : IDisposable
         string sourceDisplay = LanguageDisplayName(sourceLanguage);
         string targetDisplay = LanguageDisplayName(targetLanguage);
 
+        string issuesLine = string.Empty;
+        if (meaningIssues is not null && meaningIssues.Count > 0)
+        {
+            string joined = string.Join("; ", meaningIssues.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
+            if (!string.IsNullOrWhiteSpace(joined))
+            {
+                issuesLine = $"\nMaterial meaning issues to fix (do not drop or alter): {joined}";
+            }
+        }
+
         IReadOnlyList<ChatMessage> messages =
         [
             new ChatMessage("system", $"You are a translation engine. Revise the {targetDisplay} translation of the given {sourceDisplay} line so it preserves the meaning but fits a dubbing window of approximately {windowSeconds:0.0#} seconds. Keep the output at most {maxChars} characters. Output only the revised translation, with no quotes, notes, or explanation."),
-            new ChatMessage("user", $"Original {sourceDisplay}: {sourceText}\nCurrent {targetDisplay} ({currentTranslation.Length} chars): {currentTranslation}\nRewrite it shorter, at most {maxChars} characters, preserving meaning."),
+            new ChatMessage("user", $"Original {sourceDisplay}: {sourceText}\nCurrent {targetDisplay} ({currentTranslation.Length} chars): {currentTranslation}\nRewrite it shorter, at most {maxChars} characters, preserving meaning.{issuesLine}"),
         ];
 
         return ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Meaning-fidelity check via the Meta API. Prompt-only JSON with resilient parser (exercised path).
+    /// </summary>
+    public async Task<MeaningCheckResult> CheckMeaningAsync(
+        string sourceText,
+        string candidateTranslation,
+        string sourceLanguage,
+        string targetLanguage,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceText);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidateTranslation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
+
+        string sourceDisplay = LanguageDisplayName(sourceLanguage);
+        string targetDisplay = LanguageDisplayName(targetLanguage);
+
+        IReadOnlyList<ChatMessage> messages =
+        [
+            new ChatMessage("system", MeaningGate.BuildSystemPrompt()),
+            new ChatMessage("user", MeaningGate.BuildUserPrompt(sourceText, candidateTranslation, sourceDisplay, targetDisplay)),
+        ];
+
+        ChatCompletionResult raw = await ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken).ConfigureAwait(false);
+        string endpointHost = GetEndpointHostForUsage();
+        return MeaningGate.ParseAndNormalize(raw.Content, raw.Model, raw.Usage, endpointHost);
+    }
+
+    private static string GetEndpointHostForUsage()
+    {
+        string baseUrl = MetaAuth.GetBaseUrl();
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out Uri? uri))
+        {
+            return uri.Host;
+        }
+
+        return baseUrl;
     }
 
     private static string LanguageDisplayName(string code)

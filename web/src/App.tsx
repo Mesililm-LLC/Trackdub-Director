@@ -101,7 +101,6 @@ export default function App() {
     try {
       const res = await postTranslate(segments, from, to);
       setBatch(res);
-      // Keep QA if it exists but clear stale mapping if segment ids changed? Keep both.
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -116,7 +115,6 @@ export default function App() {
     try {
       const res = await postQa(segments, from, to);
       setQa(res);
-      // Also keep batch in sync: QA final translations are authoritative for the UI
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -215,13 +213,11 @@ export default function App() {
           {segments.map((seg) => {
             const q: QaSegmentReport | undefined = qaById?.get(seg.id);
             const translated = batchById?.get(seg.id) ?? null;
-            // For the line list, prefer QA final translation, else batch translation, else placeholder
             const displayTranslation = q?.final_translation ?? translated ?? "—";
             const windowSec = q?.window_seconds ?? seg.duration_seconds ?? null;
             const verdict = q?.final_verdict ?? null;
             const firstVerdict = q?.first_attempt.verdict ?? null;
             const estimated = q ? q.first_attempt.estimated_seconds : null;
-            // Count attempts: 1 (first) + revisions, or just 1 if no QA yet
             const attemptCount = q ? 1 + q.revisions.length : translated ? 1 : 0;
             const isExpanded = expanded[seg.id] ?? false;
 
@@ -238,7 +234,25 @@ export default function App() {
                       {windowSec != null ? `window ${fmtSec(windowSec)}` : "window —"}
                       {estimated != null ? ` · est ${fmtSec(estimated)}` : q ? ` · est ${fmtSec(q.first_attempt.estimated_seconds)}` : ""}
                     </span>
-                    {verdict ? (
+                    {q ? (
+                      <>
+                        <span className={`verdict verdict-${q.first_attempt.timing_verdict.toLowerCase()}`} title="Timing gate">
+                          Timing: {q.first_attempt.timing_verdict}
+                        </span>
+                        {q.first_attempt.meaning_verdict === "NotEvaluated" ? (
+                          <span className="verdict verdict-notevaluated" title="Meaning not checked (timing failed)">
+                            Meaning: Not checked
+                          </span>
+                        ) : (
+                          <span className={`verdict verdict-${q.first_attempt.meaning_verdict.toLowerCase()}`} title="Meaning gate">
+                            Meaning: {q.first_attempt.meaning_verdict}
+                          </span>
+                        )}
+                        <span className={`verdict verdict-${(verdict ?? "idle").toLowerCase()}`} title="Combined verdict">
+                          Final: {verdict}
+                        </span>
+                      </>
+                    ) : verdict ? (
                       <span className={`verdict verdict-${verdict.toLowerCase()}`}>{verdict}</span>
                     ) : firstVerdict ? (
                       <span className={`verdict verdict-${firstVerdict.toLowerCase()}`}>{firstVerdict}</span>
@@ -263,6 +277,8 @@ export default function App() {
                       <span>Kind</span>
                       <span>Translation</span>
                       <span>Est / window</span>
+                      <span>Timing</span>
+                      <span>Meaning</span>
                       <span>Verdict</span>
                       <span>Tokens</span>
                     </div>
@@ -274,12 +290,41 @@ export default function App() {
                         <span>
                           {fmtSec(a.estimated_seconds)} / {fmtSec(a.window_seconds)} (max {a.max_chars}c)
                         </span>
+                        <span className={`verdict verdict-${a.timing_verdict.toLowerCase()}`}>{a.timing_verdict}</span>
+                        {a.meaning_verdict === "NotEvaluated" ? (
+                          <span className="verdict verdict-notevaluated" title="Not checked (timing failed)">
+                            Not checked
+                          </span>
+                        ) : (
+                          <span className={`verdict verdict-${a.meaning_verdict.toLowerCase()}`} title={a.meaning_explanation ?? ""}>
+                            {a.meaning_verdict}
+                          </span>
+                        )}
                         <span className={`verdict verdict-${a.verdict.toLowerCase()}`}>{a.verdict}</span>
-                        <span>{a.total_tokens}</span>
+                        <span>
+                          {a.total_tokens}
+                          {a.meaning_total_tokens > 0 ? ` +${a.meaning_total_tokens}m` : ""}
+                        </span>
                       </div>
                     ))}
+                    {[q.first_attempt, ...q.revisions].map((a) =>
+                      a.meaning_issues && a.meaning_issues.length > 0 ? (
+                        <div key={`${seg.id}-${a.attempt_number}-issues`} className="meaning-issues">
+                          <strong>#{a.attempt_number} meaning issues:</strong> {a.meaning_issues.join("; ")}
+                          {a.meaning_explanation ? ` — ${a.meaning_explanation}` : ""}
+                        </div>
+                      ) : a.meaning_explanation ? (
+                        <div key={`${seg.id}-${a.attempt_number}-expl`} className="meaning-issues">
+                          <strong>#{a.attempt_number} meaning:</strong> {a.meaning_explanation}
+                        </div>
+                      ) : null,
+                    )}
                     <div className="token-usage">
                       Total tokens for line: {q.token_usage.total_tokens} (prompt {q.token_usage.prompt_tokens} + completion {q.token_usage.completion_tokens})
+                    </div>
+                    <div className="token-usage">
+                      Meaning gate: model {q.first_attempt.meaning_model_id ?? "—"} · template {q.first_attempt.meaning_prompt_template_version ?? "—"} ·{" "}
+                      {q.first_attempt.meaning_timestamp_utc ?? "—"}
                     </div>
                   </div>
                 )}
