@@ -189,15 +189,67 @@ public static class MeaningGate
             null);
     }
 
+    /// <summary>
+    /// Extract the first balanced JSON object from prose. Walks braces while tracking string
+    /// literals and escapes so a stray '}' in trailing prose (or a brace inside a string value)
+    /// cannot over-extend or truncate the object.
+    /// </summary>
     private static string? ExtractJsonObject(string content)
     {
         int start = content.IndexOf('{');
-        int end = content.LastIndexOf('}');
-        if (start >= 0 && end > start)
+        if (start < 0)
         {
-            return content[start..(end + 1)];
+            return null;
         }
 
+        int depth = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        for (int i = start; i < content.Length; i++)
+        {
+            char c = content[i];
+
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (inString)
+            {
+                if (c == '\\')
+                {
+                    escaped = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    inString = true;
+                    break;
+                case '{':
+                    depth++;
+                    break;
+                case '}':
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return content[start..(i + 1)];
+                    }
+
+                    break;
+            }
+        }
+
+        // Unbalanced: let the caller's parser fail closed.
         return null;
     }
 

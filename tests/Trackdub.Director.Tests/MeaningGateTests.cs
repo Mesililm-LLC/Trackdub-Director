@@ -62,6 +62,32 @@ public sealed class MeaningGateTests
     }
 
     [Fact]
+    public void Parse_trailing_prose_with_brace_does_not_over_extend()
+    {
+        // Trailing prose contains a stray '}' that would corrupt a LastIndexOf('}') extraction.
+        string raw = "{\"verdict\": \"pass\", \"issues\": [], \"explanation\": \"ok\"} See { notes } for more. }";
+        MeaningCheckResult r = MeaningGate.ParseAndNormalize(raw, "muse-spark-1.1", null, "api.meta.ai");
+        Assert.Equal(MeaningVerdict.Pass, r.Verdict);
+    }
+
+    [Fact]
+    public void Parse_braces_inside_string_values_are_balanced()
+    {
+        // Explanation text itself contains unbalanced braces; extraction must not be thrown off.
+        string raw = "{\"verdict\": \"fail\", \"issues\": [\"dropped {obj}\"], \"explanation\": \"One {two three\"} tail }";
+        MeaningCheckResult r = MeaningGate.ParseAndNormalize(raw, "muse-spark-1.1", null, "api.meta.ai");
+        Assert.Equal(MeaningVerdict.Fail, r.Verdict);
+        Assert.Single(r.Issues);
+    }
+
+    [Fact]
+    public void Parse_unbalanced_object_fails_closed()
+    {
+        MeaningCheckResult r = MeaningGate.ParseAndNormalize("{\"verdict\": \"pass\"", "muse-spark-1.1", null, "api.meta.ai");
+        Assert.Equal(MeaningVerdict.Fail, r.Verdict);
+    }
+
+    [Fact]
     public void ForError_creates_error_verdict()
     {
         MeaningCheckResult r = MeaningGate.ForError("API 502 bad gateway", "muse-spark-1.1", null, "api.meta.ai");

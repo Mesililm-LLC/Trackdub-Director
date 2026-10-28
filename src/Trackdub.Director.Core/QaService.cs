@@ -210,7 +210,7 @@ public sealed class QaService
         double est, double window, int maxChars,
         bool fits, string sourceText, string sourceLanguage, string targetLanguage,
         string endpointHost, MetaClient.TokenUsage? usage, string modelId,
-        TokenAccum tokenAccum, CancellationToken ct)
+        TokenAccum tokenAccum, CancellationToken cancellationToken)
     {
         QaVerdict timingVerdict = fits ? QaVerdict.Pass : QaVerdict.Fail;
 
@@ -247,7 +247,7 @@ public sealed class QaService
         try
         {
             MeaningCheckResult meaning = await _client.CheckMeaningAsync(
-                sourceText, translation, sourceLanguage, targetLanguage, ct).ConfigureAwait(false);
+                sourceText, translation, sourceLanguage, targetLanguage, cancellationToken).ConfigureAwait(false);
 
             if (meaning.Verdict == MeaningVerdict.Error)
             {
@@ -306,7 +306,12 @@ public sealed class QaService
                 MeaningTotalTokens: meaning.Usage?.TotalTokens ?? 0,
                 MeaningEndpointHost: endpointHost);
         }
-        catch (Exception ex) when (ex is MetaApiException or HttpRequestException or TaskCanceledException or InvalidOperationException)
+        // Transport/API failure becomes a MeaningVerdict.Error attempt (combined Fail, no revision).
+        // Caller cancellation is NOT a meaning error: it must propagate so the loop stops instead of
+        // continuing to burn API calls across remaining segments.
+        catch (Exception ex) when (
+            ex is MetaApiException or HttpRequestException or InvalidOperationException
+            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
             string msg = ex.Message ?? ex.GetType().Name;
             var err = MeaningGate.ForError(msg, modelId, null, endpointHost);

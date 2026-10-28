@@ -537,6 +537,79 @@ public sealed class QaServiceTests
     }
 
     [Fact]
+    public async Task Cancellation_propagates_and_stops_the_segment_loop()
+    {
+        using var _ = FakeAuth();
+
+        // 8 segments so a swallowed cancellation would keep issuing API calls past the cancel point.
+        var segs = Enumerable.Range(1, 8)
+            .Select(i => new QaSegmentInput($"seg-{i:00}", "Hello.", DurationSeconds: 4.2))
+            .ToArray();
+
+        int translateCalls = 0;
+        int meaningCalls = 0;
+        using var cts = new CancellationTokenSource();
+        var handler = new DelegatingHandlerStub(async (request, ct) =>
+        {
+            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
+            {
+                // Cancellation arrives while the meaning check for segment 1 is in flight.
+                Interlocked.Increment(ref meaningCalls);
+                await cts.CancelAsync();
+                throw new TaskCanceledException("A task was canceled.");
+            }
+
+            Interlocked.Increment(ref translateCalls);
+            return ChatResponse("muse-spark-1.1", "Hola.", 10, 5);
+        });
+
+        using var http = new HttpClient(handler);
+        using var client = new MetaClient(http);
+        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
+        var svc = new QaService(client, opts);
+
+        // Caller cancellation must surface, not be converted into a per-segment MeaningVerdict.Error
+        // that lets the loop march on through the remaining segments.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => svc.RunAsync(segs, "en", "es", cts.Token));
+
+        // The loop stopped at segment 1: one translate plus one meaning call, no segment 2+ work.
+        Assert.Equal(1, translateCalls);
+        Assert.Equal(1, meaningCalls);
+    }
+
+    [Fact]
+    public async Task Caller_cancelled_token_on_meaning_is_not_recorded_as_meaning_error()
+    {
+        using var _ = FakeAuth();
+
+        using var cts = new CancellationTokenSource();
+        var handler = new DelegatingHandlerStub(async (request, ct) =>
+        {
+            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
+            {
+                await cts.CancelAsync();
+                throw new TaskCanceledException("A task was canceled.");
+            }
+
+            return ChatResponse("muse-spark-1.1", "Hola.", 10, 5);
+        });
+
+        using var http = new HttpClient(handler);
+        using var client = new MetaClient(http);
+        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
+        var svc = new QaService(client, opts);
+
+        var segs = new[] { new QaSegmentInput("seg-cancel", "Hello.", DurationSeconds: 4.2) };
+
+        // Cancelled while the meaning check is in flight: this is cancellation, not a meaning Error.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => svc.RunAsync(segs, "en", "es", cts.Token));
+    }
+
+    [Fact]
     public async Task Meaning_error_initial_is_terminal_and_does_not_consume_revision()
     {
         using var _ = FakeAuth();
@@ -565,77 +638,39 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
+        // Initial translation overruns the 4.2s window (63c budget at 15cps), so timing fails and
+        // the meaning check is skipped. Revision "Hola." fits, so meaning runs and the transport
+        // failure is recorded as Error: combined Fail, terminal, no further revisions.
         var translations = new Queue<string>([
             "Traduccion larguisima que no cabe en la ventana asignada definitivamente",
             "Hola.",
         ]);
-        var meanings = new Queue<string>([MeaningPassJson()]);
-        // Second meaning call (for revision) will throw
-        var meaningExceptions = new Queue<Exception>();
-        int meaningCallCount = 0;
+        int meaningCalls = 0;
         var handler = new DelegatingHandlerStub(async (request, ct) =>
         {
             string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            bool isMeaning = body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal);
-            if (isMeaning)
+            if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
-                meaningCallCount++;
-                if (meaningCallCount == 1)
-                {
-                    // This path shouldn't be hit for initial because initial timing fails
-                    throw new InvalidOperationException("Initial meaning should not be called");
-                }
-
-                if (meaningCallCount == 2)
-                {
-                    throw new HttpRequestException("API 502 bad gateway");
-                }
-            }
-
-            if (isMeaning)
-            {
-                return ChatResponse("muse-spark-1.1", meanings.Dequeue(), 7, 4);
+                meaningCalls++;
+                throw new HttpRequestException("API 502 bad gateway");
             }
 
             return ChatResponse("muse-spark-1.1", translations.Dequeue(), 10, 5);
         });
-        // For this test, first translation fails timing, so first meaning not called. Second translation passes timing, then meaning throws.
-        // We need to adjust handler to count only meaning calls that actually happen.
-        // So we replace with dedicated counts
-        var translations2 = new Queue<string>([
-            "Traduccion larguisima que no cabe en la ventana asignada definitivamente",
-            "Hola.",
-        ]);
-        int revMeaningCalls = 0;
-        var handler2 = new DelegatingHandlerStub(async (request, ct) =>
-        {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            bool isMeaning = body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal);
-            if (isMeaning)
-            {
-                revMeaningCalls++;
-                if (revMeaningCalls == 1)
-                {
-                    throw new HttpRequestException("API 502 bad gateway");
-                }
 
-                return ChatResponse("muse-spark-1.1", MeaningPassJson(), 7, 4);
-            }
-
-            return ChatResponse("muse-spark-1.1", translations2.Dequeue(), 10, 5);
-        });
-        using var http = new HttpClient(handler2);
+        using var http = new HttpClient(handler);
         using var client = new MetaClient(http);
         var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
         var svc = new QaService(client, opts);
 
         var segs = new[] { new QaSegmentInput("seg-err2", "Hello.", DurationSeconds: 4.2) };
-        // First fails timing, second passes timing then meaning errors
-        // But first translation "Traduccion larg..." length? Let's pick long enough to fail 4.2s? 4.2s*15=63 chars, so long string 70 chars fails
-        // Second "Hola." passes
         QaReport report = await svc.RunAsync(segs, "en", "es");
         QaSegmentReport seg = report.Segments[0];
+
+        // Meaning ran exactly once (the revision attempt); the timing-fail attempt skipped it.
+        Assert.Equal(1, meaningCalls);
         Assert.Single(seg.Revisions);
+        Assert.Equal(MeaningVerdict.NotEvaluated, seg.FirstAttempt.MeaningVerdict);
         Assert.Equal(MeaningVerdict.Error, seg.Revisions[0].MeaningVerdict);
         Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
         Assert.Contains("502", seg.Revisions[0].MeaningExplanation ?? string.Empty, StringComparison.Ordinal);
