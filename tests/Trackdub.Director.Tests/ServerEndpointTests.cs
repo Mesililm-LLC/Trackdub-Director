@@ -25,6 +25,20 @@ public sealed class ServerEndpointTests
         };
     }
 
+    private static HttpResponseMessage ChatOk(string modelId, string content, int promptTokens = 10, int completionTokens = 5)
+    {
+        var payload = new
+        {
+            id = $"chatcmpl-test-{Guid.NewGuid():N}",
+            @object = "chat.completion",
+            created = 1234567890L,
+            model = modelId,
+            choices = new[] { new { index = 0, finish_reason = "stop", message = new { role = "assistant", content } } },
+            usage = new { prompt_tokens = promptTokens, completion_tokens = completionTokens, total_tokens = promptTokens + completionTokens },
+        };
+        return JsonOk(payload);
+    }
+
     private sealed class DelegatingHandlerStub : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;
@@ -82,7 +96,19 @@ public sealed class ServerEndpointTests
 
     private static HttpMessageHandler SequencedChatHandler(Queue<string> translations, string modelId = "muse-spark-1.1", int promptTokens = 10, int completionTokens = 5)
     {
-        return new DelegatingHandlerStub((request, cancellationToken) =>
+        return DualHandler(translations, new Queue<string>([JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation = "ok" })]), modelId, promptTokens, completionTokens);
+    }
+
+    private static HttpMessageHandler DualHandler(
+        Queue<string> translations,
+        Queue<string> meaningJsons,
+        string modelId = "muse-spark-1.1",
+        int promptTokens = 10,
+        int completionTokens = 5,
+        int meaningPrompt = 7,
+        int meaningComp = 4)
+    {
+        return new DelegatingHandlerStub(async (request, cancellationToken) =>
         {
             string? path = request.RequestUri?.AbsolutePath;
             if (path is not null && path.EndsWith("/models", StringComparison.Ordinal))
@@ -96,7 +122,21 @@ public sealed class ServerEndpointTests
                         new { id = "llama-4-maverick", @object = "model", created = 124L, owned_by = "meta" },
                     },
                 };
-                return Task.FromResult(JsonOk(modelsPayload));
+                return JsonOk(modelsPayload);
+            }
+
+            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            bool isMeaning = body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal);
+
+            if (isMeaning)
+            {
+                if (meaningJsons.Count == 0)
+                {
+                    throw new InvalidOperationException("No more canned meaning JSON queued.");
+                }
+
+                string mj = meaningJsons.Dequeue();
+                return ChatOk(modelId, mj, meaningPrompt, meaningComp);
             }
 
             if (translations.Count == 0)
@@ -105,16 +145,7 @@ public sealed class ServerEndpointTests
             }
 
             string translation = translations.Dequeue();
-            var payload = new
-            {
-                id = $"chatcmpl-test-{Guid.NewGuid():N}",
-                @object = "chat.completion",
-                created = 1234567890L,
-                model = modelId,
-                choices = new[] { new { index = 0, finish_reason = "stop", message = new { role = "assistant", content = translation } } },
-                usage = new { prompt_tokens = promptTokens, completion_tokens = completionTokens, total_tokens = promptTokens + completionTokens },
-            };
-            return Task.FromResult(JsonOk(payload));
+            return ChatOk(modelId, translation, promptTokens, completionTokens);
         });
     }
 
@@ -194,7 +225,7 @@ public sealed class ServerEndpointTests
     {
         using var auth = FakeAuth();
         var q = new Queue<string>(["Hola, mundo.", "Accion!"]);
-        using var factory = new ServerFactory(SequencedChatHandler(q));
+        using var factory = new ServerFactory(DualHandler(q, new Queue<string>()));
         using HttpClient client = factory.CreateClient();
 
         var body = new
@@ -233,11 +264,12 @@ public sealed class ServerEndpointTests
     public async Task Qa_happy_path_returns_report_matching_cli_shape()
     {
         using var auth = FakeAuth();
-        var q = new Queue<string>([
+        var translations = new Queue<string>([
             "Esta es una traduccion larguisima", // 32c -> ~2.1s fail for 1.0s window
-            "Corta", // 5c -> pass
+            "Corta", // 5c -> pass timing, then meaning pass
         ]);
-        using var factory = new ServerFactory(SequencedChatHandler(q));
+        var meanings = new Queue<string>([JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation = "ok" })]);
+        using var factory = new ServerFactory(DualHandler(translations, meanings));
         using HttpClient client = factory.CreateClient();
 
         var body = new
@@ -268,9 +300,21 @@ public sealed class ServerEndpointTests
         JsonElement seg = segs[0];
         Assert.Equal("seg-001", seg.GetProperty("id").GetString());
         Assert.Equal("Fail", seg.GetProperty("first_attempt").GetProperty("verdict").GetString());
+        Assert.Equal("Fail", seg.GetProperty("first_attempt").GetProperty("timing_verdict").GetString());
+        Assert.Equal("NotEvaluated", seg.GetProperty("first_attempt").GetProperty("meaning_verdict").GetString());
         Assert.Equal(1, seg.GetProperty("revisions").GetArrayLength());
         Assert.Equal("Pass", seg.GetProperty("final_verdict").GetString());
+        Assert.Equal("Pass", seg.GetProperty("revisions")[0].GetProperty("timing_verdict").GetString());
+        Assert.Equal("Pass", seg.GetProperty("revisions")[0].GetProperty("meaning_verdict").GetString());
         Assert.Equal("Corta", seg.GetProperty("final_translation").GetString());
+        // Meaning fields present on the revision that was actually evaluated
+        Assert.True(seg.GetProperty("revisions")[0].TryGetProperty("meaning_issues", out _));
+        Assert.True(seg.GetProperty("revisions")[0].TryGetProperty("meaning_explanation", out _));
+        Assert.True(seg.GetProperty("revisions")[0].TryGetProperty("meaning_prompt_template_version", out JsonElement tmpl));
+        Assert.Equal("meaning-v1", tmpl.GetString());
+        Assert.True(seg.GetProperty("revisions")[0].GetProperty("meaning_total_tokens").GetInt32() > 0);
+        // Timing-fail attempt never carries meaning provenance or tokens
+        Assert.Equal(0, seg.GetProperty("first_attempt").GetProperty("meaning_total_tokens").GetInt32());
 
         Assert.Equal(1, totals.GetProperty("total_segments").GetInt32());
         Assert.Equal(0, totals.GetProperty("first_pass_count").GetInt32());

@@ -32,7 +32,19 @@ public sealed record QaAttemptReport(
     [property: JsonPropertyName("prompt_tokens")] int PromptTokens,
     [property: JsonPropertyName("completion_tokens")] int CompletionTokens,
     [property: JsonPropertyName("total_tokens")] int TotalTokens,
-    [property: JsonPropertyName("model_id")] string ModelId);
+    [property: JsonPropertyName("model_id")] string ModelId,
+    // Timing vs meaning split — additive for backward compat. Verdict is Pass iff Timing Pass AND Meaning Pass.
+    [property: JsonPropertyName("timing_verdict")] QaVerdict TimingVerdict = QaVerdict.Pass,
+    [property: JsonPropertyName("meaning_verdict")] MeaningVerdict MeaningVerdict = MeaningVerdict.NotEvaluated,
+    [property: JsonPropertyName("meaning_issues")] string[]? MeaningIssues = null,
+    [property: JsonPropertyName("meaning_explanation")] string? MeaningExplanation = null,
+    [property: JsonPropertyName("meaning_model_id")] string? MeaningModelId = null,
+    [property: JsonPropertyName("meaning_prompt_template_version")] string? MeaningPromptTemplateVersion = null,
+    [property: JsonPropertyName("meaning_timestamp_utc")] string? MeaningTimestampUtc = null,
+    [property: JsonPropertyName("meaning_prompt_tokens")] int MeaningPromptTokens = 0,
+    [property: JsonPropertyName("meaning_completion_tokens")] int MeaningCompletionTokens = 0,
+    [property: JsonPropertyName("meaning_total_tokens")] int MeaningTotalTokens = 0,
+    [property: JsonPropertyName("meaning_endpoint_host")] string? MeaningEndpointHost = null);
 
 public sealed record QaSegmentReport(
     [property: JsonPropertyName("id")] string Id,

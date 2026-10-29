@@ -110,7 +110,6 @@ internal static class QaCli
 
         if (hasCps)
         {
-            // Apply CLI cps to the target language (the one whose timing we actually check)
             cpsOverrides[to.Trim().ToLowerInvariant()] = cps;
         }
 
@@ -155,13 +154,45 @@ internal static class QaCli
         {
             string flag = seg.FinalVerdict == QaVerdict.Pass ? "PASS" : "FAIL";
             string firstFlag = seg.FirstAttempt.Verdict == QaVerdict.Pass ? "pass" : "fail";
-            Console.WriteLine($"  {seg.Id}: window {seg.WindowSeconds:0.00}s | first {firstFlag} ({seg.FirstAttempt.EstimatedSeconds:0.00}s, {seg.FirstAttempt.Translation.Length}c) | final {flag} ({seg.FinalTranslation.Length}c, {seg.TokenUsage.TotalTokens} tok) | revisions {seg.Revisions.Length}");
-            if (seg.Revisions.Length > 0)
+            string firstTiming = seg.FirstAttempt.TimingVerdict == QaVerdict.Pass ? "pass" : "fail";
+            string firstMeaning = seg.FirstAttempt.MeaningVerdict == MeaningVerdict.NotEvaluated ? "not checked" : seg.FirstAttempt.MeaningVerdict.ToString().ToLowerInvariant();
+            Console.WriteLine($"  {seg.Id}: window {seg.WindowSeconds:0.00}s | first {firstFlag} (timing {firstTiming} meaning {firstMeaning} {seg.FirstAttempt.EstimatedSeconds:0.00}s, {seg.FirstAttempt.Translation.Length}c) | final {flag} ({seg.FinalTranslation.Length}c, {seg.TokenUsage.TotalTokens} tok) | revisions {seg.Revisions.Length}");
+            PrintFirstMeaning(seg.FirstAttempt);
+            PrintRevisions(seg.Revisions);
+        }
+    }
+
+    private static void PrintFirstMeaning(QaAttemptReport attempt)
+    {
+        if (attempt.MeaningIssues is not null && attempt.MeaningIssues.Length > 0)
+        {
+            Console.WriteLine($"    first meaning issues: {string.Join("; ", attempt.MeaningIssues)}");
+            if (!string.IsNullOrWhiteSpace(attempt.MeaningExplanation))
             {
-                foreach (QaAttemptReport rev in seg.Revisions)
-                {
-                    Console.WriteLine($"    rev #{rev.AttemptNumber}: {rev.Verdict.ToString().ToLowerInvariant()} {rev.EstimatedSeconds:0.00}s \"{Trunc(rev.Translation, 72)}\"");
-                }
+                Console.WriteLine($"    first meaning explanation: {attempt.MeaningExplanation}");
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(attempt.MeaningExplanation) && attempt.MeaningVerdict == MeaningVerdict.Error)
+        {
+            Console.WriteLine($"    first meaning error: {attempt.MeaningExplanation}");
+        }
+    }
+
+    private static void PrintRevisions(QaAttemptReport[] revisions)
+    {
+        foreach (QaAttemptReport rev in revisions)
+        {
+            string timing = rev.TimingVerdict == QaVerdict.Pass ? "pass" : "fail";
+            string meaning = rev.MeaningVerdict == MeaningVerdict.NotEvaluated ? "not checked" : rev.MeaningVerdict.ToString().ToLowerInvariant();
+            Console.WriteLine($"    rev #{rev.AttemptNumber}: {rev.Verdict.ToString().ToLowerInvariant()} (timing {timing} meaning {meaning}) {rev.EstimatedSeconds:0.00}s \"{Trunc(rev.Translation, 64)}\" meanTok {rev.MeaningTotalTokens}");
+            if (rev.MeaningIssues is not null && rev.MeaningIssues.Length > 0)
+            {
+                Console.WriteLine($"      meaning issues: {string.Join("; ", rev.MeaningIssues)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(rev.MeaningExplanation))
+            {
+                Console.WriteLine($"      meaning: {rev.MeaningExplanation}");
             }
         }
     }
@@ -172,12 +203,13 @@ internal static class QaCli
     {
         Console.WriteLine("Usage: trackdub-director qa --input <segments.json> --output <report.json> [options]");
         Console.WriteLine();
-        Console.WriteLine("Run translate + QA timing check over a segments file. Each segment may carry");
+        Console.WriteLine("Run translate + QA timing+meaning check over a segments file. Each segment may carry");
         Console.WriteLine("an optional duration_seconds (dubbing window). When absent, the window is");
         Console.WriteLine("estimated from the source line's spoken duration at the configured CPS.");
-        Console.WriteLine("A deterministic duration estimator (chars / cps) checks each translation;");
-        Console.WriteLine("failures are bounced back to the model for revision (preserving meaning,");
-        Console.WriteLine("fitting the window) up to --max-attempts. Never silently accepted.");
+        Console.WriteLine("A deterministic duration estimator (chars / cps) checks timing; a meaning-fidelity");
+        Console.WriteLine("model check (subject/action/negation/modality/numbers/entities/objects; idiom allowed)");
+        Console.WriteLine("checks meaning when timing passes. Failures bounce back to the model for revision");
+        Console.WriteLine("up to --max-attempts (meaning Error fails without revision). Never silently accepted.");
         Console.WriteLine();
         Console.WriteLine("  --input <path>        Input JSON: array of {id, text, duration_seconds?} (required).");
         Console.WriteLine("  --output <path>       Output report JSON path (required).");

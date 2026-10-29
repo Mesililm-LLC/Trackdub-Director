@@ -138,85 +138,127 @@ public sealed class QaService
         double est = DurationEstimator.EstimateSeconds(currentTranslation, targetCps);
         bool fits = DurationEstimator.Fits(est, windowSeconds, _options.ToleranceFraction);
 
-        var firstAttempt = new QaAttemptReport(
-            AttemptNumber: 1,
-            Kind: QaAttemptKind.Initial,
-            Translation: currentTranslation,
-            EstimatedSeconds: est,
-            WindowSeconds: windowSeconds,
-            MaxChars: maxChars,
-            Verdict: fits ? QaVerdict.Pass : QaVerdict.Fail,
-            PromptTokens: initial.Usage?.PromptTokens ?? 0,
-            CompletionTokens: initial.Usage?.CompletionTokens ?? 0,
-            TotalTokens: initial.Usage?.TotalTokens ?? 0,
-            ModelId: initial.Model);
+        var context = new SegmentContext(segment.Text, sourceLanguage, targetLanguage, endpointHost);
+        var initialAttempt = new AttemptInput(1, QaAttemptKind.Initial, currentTranslation, est,
+            windowSeconds, maxChars, fits, initial.Usage, initial.Model);
+        QaAttemptReport firstAttempt = await EvaluateAttemptAsync(
+            initialAttempt, context, tokenAccum, cancellationToken).ConfigureAwait(false);
 
-        if (fits)
+        if (firstAttempt.Verdict == QaVerdict.Pass)
         {
             return new QaSegmentReport(
-                segment.Id,
-                segment.Text,
-                windowSeconds,
-                firstAttempt,
-                [],
-                firstAttempt.Verdict,
-                currentTranslation,
+                segment.Id, segment.Text, windowSeconds,
+                firstAttempt, [], QaVerdict.Pass, currentTranslation,
+                new QaTokenUsage(tokenAccum.Prompt, tokenAccum.Completion, tokenAccum.Total));
+        }
+
+        // Meaning Error is terminal: do not enter revision loop (does not consume revision attempts)
+        if (firstAttempt.MeaningVerdict == MeaningVerdict.Error)
+        {
+            return new QaSegmentReport(
+                segment.Id, segment.Text, windowSeconds,
+                firstAttempt, [], QaVerdict.Fail, currentTranslation,
                 new QaTokenUsage(tokenAccum.Prompt, tokenAccum.Completion, tokenAccum.Total));
         }
 
         // Revision loop
         var revisions = new List<QaAttemptReport>();
         QaVerdict finalVerdict = QaVerdict.Fail;
+        IReadOnlyList<string>? lastMeaningIssues = firstAttempt.MeaningVerdict == MeaningVerdict.Fail ? firstAttempt.MeaningIssues : null;
 
         for (int attempt = 1; attempt <= _options.MaxAttempts; attempt++)
         {
             MetaClient.ChatCompletionResult revision = await _client.ReviseTranslationForTimingAsync(
-                segment.Text,
-                currentTranslation,
-                sourceLanguage,
-                targetLanguage,
-                windowSeconds,
-                maxChars,
-                cancellationToken).ConfigureAwait(false);
+                segment.Text, currentTranslation, sourceLanguage, targetLanguage,
+                windowSeconds, maxChars, lastMeaningIssues, cancellationToken).ConfigureAwait(false);
 
             currentTranslation = revision.Content;
             tokenAccum.Add(revision.Usage);
 
             double revEst = DurationEstimator.EstimateSeconds(currentTranslation, targetCps);
             bool revFits = DurationEstimator.Fits(revEst, windowSeconds, _options.ToleranceFraction);
-            var verdict = revFits ? QaVerdict.Pass : QaVerdict.Fail;
 
-            var revReport = new QaAttemptReport(
-                AttemptNumber: 1 + attempt,
-                Kind: QaAttemptKind.Revision,
-                Translation: currentTranslation,
-                EstimatedSeconds: revEst,
-                WindowSeconds: windowSeconds,
-                MaxChars: maxChars,
-                Verdict: verdict,
-                PromptTokens: revision.Usage?.PromptTokens ?? 0,
-                CompletionTokens: revision.Usage?.CompletionTokens ?? 0,
-                TotalTokens: revision.Usage?.TotalTokens ?? 0,
-                ModelId: revision.Model);
+            var revisionAttempt = new AttemptInput(1 + attempt, QaAttemptKind.Revision, currentTranslation,
+                revEst, windowSeconds, maxChars, revFits, revision.Usage, revision.Model);
+            QaAttemptReport revAttempt = await EvaluateAttemptAsync(
+                revisionAttempt, context, tokenAccum, cancellationToken).ConfigureAwait(false);
 
-            revisions.Add(revReport);
+            revisions.Add(revAttempt);
 
-            if (revFits)
+            if (revAttempt.MeaningVerdict == MeaningVerdict.Error)
+            {
+                finalVerdict = QaVerdict.Fail;
+                break;
+            }
+
+            if (revAttempt.Verdict == QaVerdict.Pass)
             {
                 finalVerdict = QaVerdict.Pass;
                 break;
             }
+
+            if (revAttempt.MeaningVerdict == MeaningVerdict.Fail)
+            {
+                lastMeaningIssues = revAttempt.MeaningIssues;
+            }
         }
 
         return new QaSegmentReport(
-            segment.Id,
-            segment.Text,
-            windowSeconds,
-            firstAttempt,
-            revisions.ToArray(),
-            finalVerdict,
-            currentTranslation,
+            segment.Id, segment.Text, windowSeconds,
+            firstAttempt, revisions.ToArray(), finalVerdict, currentTranslation,
             new QaTokenUsage(tokenAccum.Prompt, tokenAccum.Completion, tokenAccum.Total));
+    }
+
+    private async Task<QaAttemptReport> EvaluateAttemptAsync(
+        AttemptInput attempt, SegmentContext context, TokenAccum tokenAccum, CancellationToken cancellationToken)
+    {
+        MeaningCheckResult? meaning = null;
+        if (attempt.Fits)
+        {
+            try
+            {
+                meaning = await _client.CheckMeaningAsync(
+                    context.SourceText, attempt.Translation, context.SourceLanguage, context.TargetLanguage, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (
+                ex is MetaApiException or HttpRequestException or InvalidOperationException
+                || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                meaning = MeaningGate.ForError(ex.Message, attempt.ModelId, null, context.EndpointHost);
+            }
+
+            tokenAccum.Add(meaning.Usage);
+        }
+
+        return CreateAttemptReport(attempt, context, meaning);
+    }
+
+    private static QaAttemptReport CreateAttemptReport(
+        AttemptInput attempt, SegmentContext context, MeaningCheckResult? meaning)
+    {
+        return new QaAttemptReport(
+            AttemptNumber: attempt.Number,
+            Kind: attempt.Kind,
+            Translation: attempt.Translation,
+            EstimatedSeconds: attempt.EstimatedSeconds,
+            WindowSeconds: attempt.WindowSeconds,
+            MaxChars: attempt.MaxChars,
+            Verdict: meaning?.Verdict == MeaningVerdict.Pass ? QaVerdict.Pass : QaVerdict.Fail,
+            PromptTokens: attempt.Usage?.PromptTokens ?? 0,
+            CompletionTokens: attempt.Usage?.CompletionTokens ?? 0,
+            TotalTokens: attempt.Usage?.TotalTokens ?? 0,
+            ModelId: attempt.ModelId,
+            TimingVerdict: attempt.Fits ? QaVerdict.Pass : QaVerdict.Fail,
+            MeaningVerdict: meaning?.Verdict ?? MeaningVerdict.NotEvaluated,
+            MeaningIssues: meaning?.Issues,
+            MeaningExplanation: meaning?.Explanation,
+            MeaningModelId: meaning?.ModelId,
+            MeaningPromptTemplateVersion: meaning?.PromptTemplateVersion,
+            MeaningTimestampUtc: meaning?.TimestampUtc,
+            MeaningPromptTokens: meaning?.Usage?.PromptTokens ?? 0,
+            MeaningCompletionTokens: meaning?.Usage?.CompletionTokens ?? 0,
+            MeaningTotalTokens: meaning?.Usage?.TotalTokens ?? 0,
+            MeaningEndpointHost: meaning is null ? null : context.EndpointHost);
     }
 
     public async Task WriteReportAsync(
@@ -285,6 +327,13 @@ public sealed class QaService
 
         return baseUrl;
     }
+
+    private sealed record SegmentContext(
+        string SourceText, string SourceLanguage, string TargetLanguage, string EndpointHost);
+
+    private sealed record AttemptInput(
+        int Number, QaAttemptKind Kind, string Translation, double EstimatedSeconds,
+        double WindowSeconds, int MaxChars, bool Fits, MetaClient.TokenUsage? Usage, string ModelId);
 
     private sealed class TokenAccum
     {

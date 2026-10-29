@@ -46,11 +46,22 @@ export type QaAttempt = {
   estimated_seconds: number;
   window_seconds: number;
   max_chars: number;
-  verdict: string; // Pass | Fail
+  verdict: string; // Pass | Fail (combined)
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
   model_id: string;
+  timing_verdict: string; // Pass | Fail
+  meaning_verdict: string; // Pass | Fail | Error
+  meaning_issues: string[] | null;
+  meaning_explanation: string | null;
+  meaning_model_id: string | null;
+  meaning_prompt_template_version: string | null;
+  meaning_timestamp_utc: string | null;
+  meaning_prompt_tokens: number;
+  meaning_completion_tokens: number;
+  meaning_total_tokens: number;
+  meaning_endpoint_host: string | null;
 };
 
 export type QaSegmentReport = {
