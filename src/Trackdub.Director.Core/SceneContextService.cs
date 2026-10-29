@@ -331,9 +331,8 @@ public static class SceneSegmentationParser
             // with the box it follows, not by parallel array index.
             var boxPositions = new List<(int Position, int MatchIndex)>(boxes.Count);
             for (int i = 0; i < boxes.Count; i++)
-            for (int i = 0; i < boxes.Count; i++)
+            {
                 boxPositions.Add((boxes[i].Index, i));
-                regions.Add(new SceneRegion(_document.Concept, box.X1, box.Y1, box.X2, box.Y2, box.W, box.H, mask.X, mask.Y, mask.Data));
             }
             var maskPositions = new List<(int Position, int MatchIndex)>(masks.Count);
             for (int i = 0; i < masks.Count; i++)
@@ -404,7 +403,6 @@ public static class SceneSegmentationParser
                 }
             }
 
-            return new SegmentationParseResult(false, regions.ToArray(), null);
             return new SegmentationParseResult(false, regions.ToArray(), null);
         }
 
