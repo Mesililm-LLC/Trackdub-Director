@@ -27,6 +27,19 @@ Day 4 (Oct 26): Local web app. ASP.NET Core host exposes Core
 over HTTP; React + TypeScript frontend. `src/Trackdub.Director.Server` serves
 the UI and the API from one process; `web/` is the Vite app.
 
+Director Mode Stage A (scene context, read-only): `SceneContextService`
+segments caller-supplied concept phrases in a per-segment frame via
+`sam-3.1` on `POST /v1/responses` (live-probed: `/chat/completions` rejects
+that model, a generic instruction returns empty text, and a concept phrase
+returns `output_text` box/mask tokens such as
+`<|box;x1=10;y1=10;x2=29;y2=49;w=64;h=64|><|mask;x=0;y=0;data=...|>`).
+Each segment gets a `DirectorContext` (speaker, emotion/tone, on-screen text,
+scene summary, regions) in which every field is nullable: SAM evidences only
+`regions`, speaker passes through only when caller-known, and the rest stay
+null. Malformed output is `Failed` with no defaulted context. Exposed
+read-only at `POST /api/scene-context` and as a `Scene:` outcome alongside
+Timing/Meaning in the web UI (`Run Scene`).
+
 ## Architecture
 
 ```
@@ -39,7 +52,7 @@ src/Trackdub.Director.Core/      Class library: MetaAuth (env-only auth),
                                   API keys are never read from files and never logged.
 src/Trackdub.Director.Server/    ASP.NET Core minimal API referencing Core.
                                   GET /api/status, GET /api/models,
-                                  POST /api/translate, POST /api/qa.
+                                  POST /api/translate, POST /api/qa, POST /api/scene-context.
                                   Serves web/dist output from wwwroot in production;
                                   no key required to start; key only gates live endpoints.
 src/Trackdub.Director.Cli/       Console app (trackdub-director): smoke / translate / models / qa.

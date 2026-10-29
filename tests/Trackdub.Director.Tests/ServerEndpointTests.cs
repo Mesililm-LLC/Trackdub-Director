@@ -94,19 +94,24 @@ public sealed class ServerEndpointTests
         }
     }
 
-    private static HttpMessageHandler SequencedChatHandler(Queue<string> translations, string modelId = "muse-spark-1.1", int promptTokens = 10, int completionTokens = 5)
+    private sealed class ChatStubOptions
     {
-        return DualHandler(translations, new Queue<string>([JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation = "ok" })]), modelId, promptTokens, completionTokens);
+        public string ModelId { get; init; } = "muse-spark-1.1";
+        public int PromptTokens { get; init; } = 10;
+        public int CompletionTokens { get; init; } = 5;
+        public int MeaningPrompt { get; init; } = 7;
+        public int MeaningComp { get; init; } = 4;
+    }
+
+    private static HttpMessageHandler SequencedChatHandler(Queue<string> translations, ChatStubOptions? options = null)
+    {
+        return DualHandler(translations, new Queue<string>([JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation = "ok" })]), options ?? new ChatStubOptions());
     }
 
     private static HttpMessageHandler DualHandler(
         Queue<string> translations,
         Queue<string> meaningJsons,
-        string modelId = "muse-spark-1.1",
-        int promptTokens = 10,
-        int completionTokens = 5,
-        int meaningPrompt = 7,
-        int meaningComp = 4)
+        ChatStubOptions options)
     {
         return new DelegatingHandlerStub(async (request, cancellationToken) =>
         {
@@ -136,7 +141,7 @@ public sealed class ServerEndpointTests
                 }
 
                 string mj = meaningJsons.Dequeue();
-                return ChatOk(modelId, mj, meaningPrompt, meaningComp);
+                return ChatOk(options.ModelId, mj, options.MeaningPrompt, options.MeaningComp);
             }
 
             if (translations.Count == 0)
@@ -145,7 +150,7 @@ public sealed class ServerEndpointTests
             }
 
             string translation = translations.Dequeue();
-            return ChatOk(modelId, translation, promptTokens, completionTokens);
+            return ChatOk(options.ModelId, translation, options.PromptTokens, options.CompletionTokens);
         });
     }
 
@@ -163,6 +168,167 @@ public sealed class ServerEndpointTests
             };
             return Task.FromResult(JsonOk(payload));
         });
+    }
+
+    private static void AssertStatusWithoutKey(JsonElement root)
+    {
+        Assert.False(root.GetProperty("hasKey").GetBoolean());
+        Assert.Equal(MetaAuth.DefaultModel, root.GetProperty("model").GetString());
+        Assert.Equal(MetaAuth.DefaultBaseUrl, root.GetProperty("baseUrl").GetString());
+    }
+
+    private static void AssertNoKeyLeak(JsonElement root, string json)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("reasoningEffort").GetString()));
+        Assert.DoesNotContain("test-fake-key", json.ToLowerInvariant());
+    }
+
+    private static void AssertTranslateRoot(JsonElement root)
+    {
+        Assert.Equal("en", root.GetProperty("source_language").GetString());
+        Assert.Equal("es", root.GetProperty("target_language").GetString());
+        Assert.Equal(2, root.GetProperty("segments").GetArrayLength());
+    }
+
+    private static void AssertFirstTranslatedSegment(JsonElement first)
+    {
+        Assert.Equal("seg-001", first.GetProperty("id").GetString());
+        Assert.Equal("Hola, mundo.", first.GetProperty("translation").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(first.GetProperty("provenance").GetProperty("model_id").GetString()));
+    }
+
+    private static void AssertTranslateUsage(JsonElement root, JsonElement first)
+    {
+        Assert.NotEqual(0, first.GetProperty("usage").GetProperty("total_tokens").GetInt32());
+        Assert.True(root.GetProperty("usage_total").GetProperty("total_tokens").GetInt32() > 0);
+    }
+
+    private static void AssertQaRoot(JsonElement root)
+    {
+        Assert.Equal("en", root.GetProperty("source_language").GetString());
+        Assert.Equal("es", root.GetProperty("target_language").GetString());
+        Assert.True(root.TryGetProperty("qa_options", out _));
+    }
+
+    private static void AssertQaCollections(JsonElement root, out JsonElement segs, out JsonElement totals)
+    {
+        Assert.True(root.TryGetProperty("segments", out segs));
+        Assert.True(root.TryGetProperty("totals", out totals));
+        Assert.Equal(1, segs.GetArrayLength());
+    }
+
+    private static void AssertQaSegment(JsonElement seg)
+    {
+        Assert.Equal("seg-001", seg.GetProperty("id").GetString());
+        Assert.Equal("Fail", seg.GetProperty("first_attempt").GetProperty("verdict").GetString());
+        Assert.Equal("Fail", seg.GetProperty("first_attempt").GetProperty("timing_verdict").GetString());
+    }
+
+    private static void AssertQaFirstAttempt(JsonElement seg)
+    {
+        Assert.Equal("NotEvaluated", seg.GetProperty("first_attempt").GetProperty("meaning_verdict").GetString());
+        Assert.Equal(1, seg.GetProperty("revisions").GetArrayLength());
+        Assert.Equal("Pass", seg.GetProperty("final_verdict").GetString());
+    }
+
+    private static void AssertQaRevision(JsonElement seg)
+    {
+        JsonElement revision = seg.GetProperty("revisions")[0];
+        Assert.Equal("Pass", revision.GetProperty("timing_verdict").GetString());
+        Assert.Equal("Pass", revision.GetProperty("meaning_verdict").GetString());
+        Assert.Equal("Corta", seg.GetProperty("final_translation").GetString());
+    }
+
+    private static void AssertQaMeaningFieldsPresent(JsonElement revision)
+    {
+        Assert.True(revision.TryGetProperty("meaning_issues", out _));
+        Assert.True(revision.TryGetProperty("meaning_explanation", out _));
+        Assert.True(revision.TryGetProperty("meaning_prompt_template_version", out _));
+    }
+
+    private static void AssertQaMeaningTemplate(JsonElement revision)
+    {
+        Assert.Equal("meaning-v1", revision.GetProperty("meaning_prompt_template_version").GetString());
+    }
+
+    private static void AssertQaTokens(JsonElement seg)
+    {
+        Assert.True(seg.GetProperty("revisions")[0].GetProperty("meaning_total_tokens").GetInt32() > 0);
+        Assert.Equal(0, seg.GetProperty("first_attempt").GetProperty("meaning_total_tokens").GetInt32());
+    }
+
+    private static void AssertQaTotals(JsonElement totals)
+    {
+        Assert.Equal(1, totals.GetProperty("total_segments").GetInt32());
+        Assert.Equal(0, totals.GetProperty("first_pass_count").GetInt32());
+        Assert.Equal(1, totals.GetProperty("final_pass_count").GetInt32());
+    }
+
+    private static void AssertQaTotalsRevisionsAndTokens(JsonElement totals)
+    {
+        Assert.Equal(1, totals.GetProperty("total_revisions").GetInt32());
+        Assert.True(totals.GetProperty("total_tokens").GetInt32() > 0);
+    }
+
+    private static void AssertQaOptions(JsonElement root)
+    {
+        Assert.Equal(3, root.GetProperty("qa_options").GetProperty("max_attempts").GetInt32());
+    }
+
+    private static void AssertSceneRoot(JsonElement root, out JsonElement seg)
+    {
+        Assert.Equal(1, root.GetProperty("segments").GetArrayLength());
+        seg = root.GetProperty("segments")[0];
+        Assert.Equal("seg-001", seg.GetProperty("id").GetString());
+    }
+
+    private static void AssertSceneStatus(JsonElement seg)
+    {
+        Assert.Equal("Parsed", seg.GetProperty("status").GetString());
+        Assert.Equal("spk-1", seg.GetProperty("context").GetProperty("speaker_id").GetString());
+    }
+
+    private static void AssertSceneSpeakerNulls(JsonElement context)
+    {
+        Assert.False(context.TryGetProperty("speaker_label", out _));
+        Assert.False(context.TryGetProperty("emotion_tone_label", out _));
+    }
+
+    private static void AssertSceneContentNulls(JsonElement context)
+    {
+        Assert.False(context.TryGetProperty("on_screen_text", out _));
+        Assert.False(context.TryGetProperty("scene_summary", out _));
+    }
+
+    private static void AssertSceneRegion(JsonElement region)
+    {
+        Assert.Equal("red rectangle", region.GetProperty("concept").GetString());
+        Assert.Equal(10, region.GetProperty("x1").GetInt32());
+        Assert.Equal(29, region.GetProperty("x2").GetInt32());
+    }
+
+    private static void AssertSceneRegionWidth(JsonElement region)
+    {
+        Assert.Equal(64, region.GetProperty("frame_width").GetInt32());
+    }
+
+    private static void AssertSceneProvenance(JsonElement provenance)
+    {
+        Assert.Equal("sam-3.1", provenance.GetProperty("model_id").GetString());
+        Assert.Equal("scene-v1", provenance.GetProperty("prompt_template_version").GetString());
+    }
+
+    private static void AssertSceneCounts(JsonElement root, JsonElement seg)
+    {
+        Assert.Equal(1, seg.GetProperty("images_processed").GetInt32());
+        Assert.Equal(1, root.GetProperty("images_processed_total").GetInt32());
+    }
+
+    private static void AssertModels(JsonElement root)
+    {
+        Assert.Equal(JsonValueKind.Array, root.ValueKind);
+        Assert.True(root.GetArrayLength() > 0);
+        Assert.Equal("muse-spark-1.1", root[0].GetProperty("id").GetString());
     }
 
     [Fact]
@@ -189,12 +355,8 @@ public sealed class ServerEndpointTests
             using JsonDocument doc = JsonDocument.Parse(json);
             JsonElement root = doc.RootElement;
 
-            Assert.False(root.GetProperty("hasKey").GetBoolean());
-            Assert.Equal(MetaAuth.DefaultModel, root.GetProperty("model").GetString());
-            Assert.Equal(MetaAuth.DefaultBaseUrl, root.GetProperty("baseUrl").GetString());
-            Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("reasoningEffort").GetString()));
-            string raw = json.ToLowerInvariant();
-            Assert.DoesNotContain("test-fake-key", raw);
+            AssertStatusWithoutKey(root);
+            AssertNoKeyLeak(root, json);
         }
         finally
         {
@@ -225,7 +387,7 @@ public sealed class ServerEndpointTests
     {
         using var auth = FakeAuth();
         var q = new Queue<string>(["Hola, mundo.", "Accion!"]);
-        using var factory = new ServerFactory(DualHandler(q, new Queue<string>()));
+        using var factory = new ServerFactory(DualHandler(q, new Queue<string>(), new ChatStubOptions()));
         using HttpClient client = factory.CreateClient();
 
         var body = new
@@ -246,18 +408,10 @@ public sealed class ServerEndpointTests
         using JsonDocument doc = JsonDocument.Parse(json);
         JsonElement root = doc.RootElement;
 
-        Assert.Equal("en", root.GetProperty("source_language").GetString());
-        Assert.Equal("es", root.GetProperty("target_language").GetString());
-        Assert.Equal(2, root.GetProperty("segments").GetArrayLength());
-
+        AssertTranslateRoot(root);
         JsonElement first = root.GetProperty("segments")[0];
-        Assert.Equal("seg-001", first.GetProperty("id").GetString());
-        Assert.Equal("Hola, mundo.", first.GetProperty("translation").GetString());
-        Assert.False(string.IsNullOrWhiteSpace(first.GetProperty("provenance").GetProperty("model_id").GetString()));
-        Assert.NotEqual(0, first.GetProperty("usage").GetProperty("total_tokens").GetInt32());
-
-        JsonElement usageTotal = root.GetProperty("usage_total");
-        Assert.True(usageTotal.GetProperty("total_tokens").GetInt32() > 0);
+        AssertFirstTranslatedSegment(first);
+        AssertTranslateUsage(root, first);
     }
 
     [Fact]
@@ -269,7 +423,7 @@ public sealed class ServerEndpointTests
             "Corta", // 5c -> pass timing, then meaning pass
         ]);
         var meanings = new Queue<string>([JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation = "ok" })]);
-        using var factory = new ServerFactory(DualHandler(translations, meanings));
+        using var factory = new ServerFactory(DualHandler(translations, meanings, new ChatStubOptions()));
         using HttpClient client = factory.CreateClient();
 
         var body = new
@@ -290,38 +444,19 @@ public sealed class ServerEndpointTests
         using JsonDocument doc = JsonDocument.Parse(json);
         JsonElement root = doc.RootElement;
 
-        Assert.Equal("en", root.GetProperty("source_language").GetString());
-        Assert.Equal("es", root.GetProperty("target_language").GetString());
-        Assert.True(root.TryGetProperty("qa_options", out _));
-        Assert.True(root.TryGetProperty("segments", out JsonElement segs));
-        Assert.True(root.TryGetProperty("totals", out JsonElement totals));
-
-        Assert.Equal(1, segs.GetArrayLength());
+        AssertQaRoot(root);
+        AssertQaCollections(root, out JsonElement segs, out JsonElement totals);
         JsonElement seg = segs[0];
-        Assert.Equal("seg-001", seg.GetProperty("id").GetString());
-        Assert.Equal("Fail", seg.GetProperty("first_attempt").GetProperty("verdict").GetString());
-        Assert.Equal("Fail", seg.GetProperty("first_attempt").GetProperty("timing_verdict").GetString());
-        Assert.Equal("NotEvaluated", seg.GetProperty("first_attempt").GetProperty("meaning_verdict").GetString());
-        Assert.Equal(1, seg.GetProperty("revisions").GetArrayLength());
-        Assert.Equal("Pass", seg.GetProperty("final_verdict").GetString());
-        Assert.Equal("Pass", seg.GetProperty("revisions")[0].GetProperty("timing_verdict").GetString());
-        Assert.Equal("Pass", seg.GetProperty("revisions")[0].GetProperty("meaning_verdict").GetString());
-        Assert.Equal("Corta", seg.GetProperty("final_translation").GetString());
-        // Meaning fields present on the revision that was actually evaluated
-        Assert.True(seg.GetProperty("revisions")[0].TryGetProperty("meaning_issues", out _));
-        Assert.True(seg.GetProperty("revisions")[0].TryGetProperty("meaning_explanation", out _));
-        Assert.True(seg.GetProperty("revisions")[0].TryGetProperty("meaning_prompt_template_version", out JsonElement tmpl));
-        Assert.Equal("meaning-v1", tmpl.GetString());
-        Assert.True(seg.GetProperty("revisions")[0].GetProperty("meaning_total_tokens").GetInt32() > 0);
-        // Timing-fail attempt never carries meaning provenance or tokens
-        Assert.Equal(0, seg.GetProperty("first_attempt").GetProperty("meaning_total_tokens").GetInt32());
-
-        Assert.Equal(1, totals.GetProperty("total_segments").GetInt32());
-        Assert.Equal(0, totals.GetProperty("first_pass_count").GetInt32());
-        Assert.Equal(1, totals.GetProperty("final_pass_count").GetInt32());
-        Assert.Equal(1, totals.GetProperty("total_revisions").GetInt32());
-        Assert.True(totals.GetProperty("total_tokens").GetInt32() > 0);
-        Assert.True(root.GetProperty("qa_options").GetProperty("max_attempts").GetInt32() == 3);
+        AssertQaSegment(seg);
+        AssertQaFirstAttempt(seg);
+        AssertQaRevision(seg);
+        JsonElement revision = seg.GetProperty("revisions")[0];
+        AssertQaMeaningFieldsPresent(revision);
+        AssertQaMeaningTemplate(revision);
+        AssertQaTokens(seg);
+        AssertQaTotals(totals);
+        AssertQaTotalsRevisionsAndTokens(totals);
+        AssertQaOptions(root);
     }
 
     [Fact]
@@ -355,6 +490,98 @@ public sealed class ServerEndpointTests
         }
     }
 
+    private static HttpMessageHandler SceneHandler()
+    {
+        return new DelegatingHandlerStub((request, _) =>
+        {
+            string? path = request.RequestUri?.AbsolutePath;
+            Assert.True(path is not null && path.EndsWith("/responses", StringComparison.Ordinal), $"Expected /responses, got {path}");
+            var payload = new
+            {
+                id = "resp_test",
+                @object = "response",
+                status = "completed",
+                model = "sam-3.1",
+                error = (object?)null,
+                output = new[]
+                {
+                    new
+                    {
+                        type = "message",
+                        role = "assistant",
+                        status = "completed",
+                        content = new[]
+                        {
+                            new
+                            {
+                                type = "output_text",
+                                text = "<0f>0<|box;x1=10;y1=10;x2=29;y2=49;w=64;h=64|><|mask;x=0;y=0;data=40,20,abc|>",
+                                annotations = Array.Empty<object>(),
+                                logprobs = Array.Empty<object>(),
+                            },
+                        },
+                    },
+                },
+                usage = new
+                {
+                    input_tokens = 0,
+                    input_tokens_details = new { cached_tokens = 0 },
+                    output_tokens = 0,
+                    output_tokens_details = new { reasoning_tokens = 0 },
+                    total_tokens = 0,
+                    images_processed = 1,
+                },
+            };
+            return Task.FromResult(JsonOk(payload));
+        });
+    }
+
+    [Fact]
+    public async Task SceneContext_happy_path_returns_parsed_region_and_honest_nulls()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(SceneHandler());
+        using HttpClient client = factory.CreateClient();
+
+        var body = new
+        {
+            segments = new[]
+            {
+                new
+                {
+                    id = "seg-001",
+                    text = "We need one more take.",
+                    frame_image_data_url = "data:image/png;base64,iVBORw0KGgo=",
+                    concepts = new[] { "red rectangle" },
+                    speaker_id = "spk-1",
+                },
+            },
+        };
+
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/scene-context", body);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        string json = await resp.Content.ReadAsStringAsync();
+        using JsonDocument doc = JsonDocument.Parse(json);
+        JsonElement root = doc.RootElement;
+
+        AssertSceneRoot(root, out JsonElement seg);
+        AssertSceneStatus(seg);
+
+        JsonElement context = seg.GetProperty("context");
+        // Nulls are omitted by the server's WhenWritingNull convention: absence == unknown.
+        AssertSceneSpeakerNulls(context);
+        AssertSceneContentNulls(context);
+
+        JsonElement region = context.GetProperty("regions")[0];
+        AssertSceneRegion(region);
+        AssertSceneRegionWidth(region);
+
+        JsonElement provenance = seg.GetProperty("provenance");
+        AssertSceneProvenance(provenance);
+        AssertSceneCounts(root, seg);
+    }
+
     [Fact]
     public async Task Models_returns_account_models()
     {
@@ -367,8 +594,6 @@ public sealed class ServerEndpointTests
 
         string json = await resp.Content.ReadAsStringAsync();
         using JsonDocument doc = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
-        Assert.True(doc.RootElement.GetArrayLength() > 0);
-        Assert.Equal("muse-spark-1.1", doc.RootElement[0].GetProperty("id").GetString());
+        AssertModels(doc.RootElement);
     }
 }

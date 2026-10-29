@@ -2,6 +2,10 @@ export type SegmentInput = {
   id: string;
   text: string;
   duration_seconds?: number | null;
+  frame_image_data_url?: string | null;
+  concepts?: string[] | null;
+  speaker_id?: string | null;
+  speaker_label?: string | null;
 };
 
 export type StatusResponse = {
@@ -100,6 +104,68 @@ export type QaReport = {
   segments: QaSegmentReport[];
   totals: QaTotals;
 };
+
+// Null context fields are omitted by the server (WhenWritingNull), so every
+// field below is optional: absence means unknown, never a default.
+export type SceneRegion = {
+  concept: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  frame_width: number;
+  frame_height: number;
+  mask_x?: number;
+  mask_y?: number;
+  mask_data?: string;
+};
+
+export type DirectorContext = {
+  speaker_id?: string;
+  speaker_label?: string;
+  emotion_tone_label?: string;
+  on_screen_text?: string[];
+  scene_summary?: string;
+  regions?: SceneRegion[];
+};
+
+export type SceneSegmentResult = {
+  id: string;
+  status: string; // Parsed | Empty | Failed
+  context?: DirectorContext;
+  error?: string;
+  provenance: TranslationProvenance;
+  usage: TranslationUsage;
+  images_processed: number;
+  raw_content?: string;
+};
+
+export type SceneContextBatch = {
+  segments: SceneSegmentResult[];
+  usage_total: TranslationUsage;
+  images_processed_total: number;
+};
+
+export async function postSceneContext(segments: SegmentInput[]): Promise<SceneContextBatch> {
+  const sceneSegments = segments.map((s) => ({
+    id: s.id,
+    text: s.text,
+    frame_image_data_url: s.frame_image_data_url ?? null,
+    concepts: s.concepts ?? null,
+    speaker_id: s.speaker_id ?? null,
+    speaker_label: s.speaker_label ?? null,
+  }));
+  const r = await fetch("/api/scene-context", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments: sceneSegments }),
+  });
+  if (!r.ok) {
+    const bodyText = await r.text().catch(() => "");
+    throw new Error(`POST /api/scene-context ${r.status}: ${bodyText.slice(0, 600)}`);
+  }
+  return (await r.json()) as SceneContextBatch;
+}
 
 export async function fetchStatus(): Promise<StatusResponse> {
   const r = await fetch("/api/status");

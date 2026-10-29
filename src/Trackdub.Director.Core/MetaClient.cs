@@ -16,6 +16,20 @@ public sealed class MetaClient : IDisposable
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    private static readonly IReadOnlyDictionary<string, string> LanguageNames =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["en"] = "English",
+            ["es"] = "Spanish",
+            ["fr"] = "French",
+            ["de"] = "German",
+            ["pt"] = "Portuguese",
+            ["it"] = "Italian",
+            ["ja"] = "Japanese",
+            ["ko"] = "Korean",
+            ["zh"] = "Chinese",
+        };
+
     private readonly HttpClient _httpClient;
     private readonly bool _ownsClient;
 
@@ -33,92 +47,60 @@ public sealed class MetaClient : IDisposable
         }
     }
 
-    public async Task<string> ChatCompletionAsync(
-        IReadOnlyList<ChatMessage> messages,
-        string? model = null,
-        CancellationToken cancellationToken = default)
+    public async Task<string> ChatCompletionAsync(ChatRequest request, CancellationToken cancellationToken = default)
     {
-        ChatCompletionResult result = await ChatCompletionWithUsageAsync(messages, model, cancellationToken).ConfigureAwait(false);
+        ChatCompletionResult result = await ChatCompletionWithUsageAsync(request, cancellationToken).ConfigureAwait(false);
         return result.Content;
     }
 
-    public async Task<ChatCompletionResult> ChatCompletionWithUsageAsync(
-        IReadOnlyList<ChatMessage> messages,
-        string? model = null,
-        CancellationToken cancellationToken = default)
+    public async Task<ChatCompletionResult> ChatCompletionWithUsageAsync(ChatRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(messages);
+        ArgumentNullException.ThrowIfNull(request);
 
-        string apiKey = MetaAuth.GetApiKey();
-        string baseUrl = MetaAuth.GetBaseUrl();
-        string resolvedModel = string.IsNullOrWhiteSpace(model) ? MetaAuth.GetModel() : model.Trim();
+        string resolvedModel = ResolveModel(request.Model);
+        string body = await SendChatAsync(resolvedModel, request.Messages, cancellationToken).ConfigureAwait(false);
+        ChatCompletionResponse? parsed = ParseChatResponse(new BodyText(body));
+        string content = ExtractContent(parsed, new BodyText(body));
+        return new ChatCompletionResult(content, parsed?.Model ?? resolvedModel, ToUsage(parsed?.Usage));
+    }
 
+    private async Task<string> SendChatAsync(string model, IReadOnlyList<ChatMessage> messages, CancellationToken cancellationToken)
+    {
         string? reasoningEffort = NormalizeReasoningEffort(MetaAuth.GetReasoningEffort());
-        var payload = new ChatCompletionRequest(resolvedModel, messages.ToArray(), reasoningEffort);
+        var payload = new ChatCompletionRequest(model, messages.ToArray(), reasoningEffort);
+        using HttpRequestMessage request = CreateAuthorizedRequest(
+            HttpMethod.Post,
+            $"{MetaAuth.GetBaseUrl()}/chat/completions",
+            JsonSerializer.Serialize(payload, JsonOptions));
+        return await SendForBodyAsync(request, cancellationToken).ConfigureAwait(false);
+    }
 
-        string json = JsonSerializer.Serialize(payload, JsonOptions);
-        string url = $"{baseUrl}/chat/completions";
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        HttpResponseMessage response;
+    private static ChatCompletionResponse? ParseChatResponse(BodyText body)
+    {
         try
         {
-            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new MetaApiException($"Meta Model API request failed: {ex.Message}", ex);
-        }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new MetaApiException("Meta Model API request timed out.", ex);
-        }
-
-        string body;
-        using (response)
-        {
-            body = response.Content is null
-                ? string.Empty
-                : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                string detail = body.Length > 500 ? body[..500] : body;
-                throw new MetaApiException($"Meta Model API HTTP {(int)response.StatusCode}: {detail}");
-            }
-        }
-
-        ChatCompletionResponse? parsed;
-        try
-        {
-            parsed = JsonSerializer.Deserialize<ChatCompletionResponse>(body, JsonOptions);
+            return JsonSerializer.Deserialize<ChatCompletionResponse>(body.Value, JsonOptions);
         }
         catch (JsonException ex)
         {
-            throw new MetaApiException($"Failed to parse Meta Model API response: {body[..Math.Min(500, body.Length)]}", ex);
+            throw new MetaApiException($"Failed to parse Meta Model API response: {Truncate(body)}", ex);
         }
+    }
 
+    private static string ExtractContent(ChatCompletionResponse? parsed, BodyText body)
+    {
         string? content = parsed?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
         if (string.IsNullOrWhiteSpace(content))
         {
-            string preview = body.Length > 500 ? body[..500] : body;
-            throw new MetaApiException($"Unexpected Meta Model API response shape: {preview}");
+            throw new MetaApiException($"Unexpected Meta Model API response shape: {Truncate(body)}");
         }
 
-        string responseModel = parsed?.Model ?? resolvedModel;
-        TokenUsage? usage = null;
-        if (parsed?.Usage is not null)
-        {
-            usage = new TokenUsage(
-                parsed.Usage.PromptTokens,
-                parsed.Usage.CompletionTokens,
-                parsed.Usage.TotalTokens);
-        }
+        return content;
+    }
 
-        return new ChatCompletionResult(content, responseModel, usage);
+    private static TokenUsage? ToUsage(UsageDto? usage)
+    {
+        return usage is null ? null : new TokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens);
     }
 
     /// <summary>
@@ -134,70 +116,35 @@ public sealed class MetaClient : IDisposable
             new ChatMessage("user", text),
         ];
 
-        return ChatCompletionAsync(messages, cancellationToken: cancellationToken);
+        return ChatCompletionAsync(new ChatRequest(messages), cancellationToken);
     }
 
     /// <summary>
     /// Generic translate with usage, used by TranslationService.
     /// </summary>
-    public Task<ChatCompletionResult> TranslateWithUsageAsync(
-        string text,
-        string sourceLanguage,
-        string targetLanguage,
-        CancellationToken cancellationToken = default)
+    public Task<ChatCompletionResult> TranslateWithUsageAsync(TranslationRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(text);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
-
-        string sourceDisplay = LanguageDisplayName(sourceLanguage);
-        string targetDisplay = LanguageDisplayName(targetLanguage);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Text);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetLanguage);
 
         IReadOnlyList<ChatMessage> messages =
         [
-            new ChatMessage("system", $"You are a translation engine. Translate the user's text from {sourceDisplay} to {targetDisplay}. Output only the translation, with no quotes, notes, or explanation."),
-            new ChatMessage("user", text),
+            new ChatMessage("system", $"You are a translation engine. Translate the user's text from {LanguageDisplayName(request.SourceLanguage)} to {LanguageDisplayName(request.TargetLanguage)}. Output only the translation, with no quotes, notes, or explanation."),
+            new ChatMessage("user", request.Text),
         ];
 
-        return ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken);
+        return ChatCompletionWithUsageAsync(new ChatRequest(messages), cancellationToken);
     }
 
     public async Task<IReadOnlyList<ModelInfo>> ListModelsAsync(CancellationToken cancellationToken = default)
     {
-        string apiKey = MetaAuth.GetApiKey();
-        string baseUrl = MetaAuth.GetBaseUrl().TrimEnd('/');
-        string url = $"{baseUrl}/models";
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        HttpResponseMessage response;
-        try
-        {
-            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new MetaApiException($"Meta Model API request failed: {ex.Message}", ex);
-        }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new MetaApiException("Meta Model API request timed out.", ex);
-        }
-
-        string body;
-        using (response)
-        {
-            body = response.Content is null
-                ? string.Empty
-                : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                string detail = body.Length > 500 ? body[..500] : body;
-                throw new MetaApiException($"Meta Model API HTTP {(int)response.StatusCode}: {detail}");
-            }
-        }
+        using HttpRequestMessage request = CreateAuthorizedRequest(
+            HttpMethod.Get,
+            $"{MetaAuth.GetBaseUrl().TrimEnd('/')}/models",
+            json: null);
+        string body = await SendForBodyAsync(request, cancellationToken).ConfigureAwait(false);
 
         ModelsResponse? parsed;
         try
@@ -206,7 +153,7 @@ public sealed class MetaClient : IDisposable
         }
         catch (JsonException ex)
         {
-            throw new MetaApiException($"Failed to parse models response: {body[..Math.Min(500, body.Length)]}", ex);
+            throw new MetaApiException($"Failed to parse models response: {Truncate(new BodyText(body))}", ex);
         }
 
         if (parsed?.Data is null)
@@ -239,88 +186,165 @@ public sealed class MetaClient : IDisposable
     /// <summary>
     /// Revision call for the QA bounce-back: shorten a translation to fit a timing window.
     /// Preserves meaning; instructs the model to keep the output under maxChars.
-    /// When meaningIssues is provided, they are injected as feedback to fix.
+    /// When MeaningIssues is provided, they are injected as feedback to fix.
     /// </summary>
-    public Task<ChatCompletionResult> ReviseTranslationForTimingAsync(
-        string sourceText,
-        string currentTranslation,
-        string sourceLanguage,
-        string targetLanguage,
-        double windowSeconds,
-        int maxChars,
-        CancellationToken cancellationToken = default)
+    public Task<ChatCompletionResult> ReviseTranslationForTimingAsync(TimingRevisionRequest request, CancellationToken cancellationToken = default)
     {
-        return ReviseTranslationForTimingAsync(sourceText, currentTranslation, sourceLanguage, targetLanguage, windowSeconds, maxChars, meaningIssues: null, cancellationToken);
-    }
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateRevisionRequest(request);
 
-    public Task<ChatCompletionResult> ReviseTranslationForTimingAsync(
-        string sourceText,
-        string currentTranslation,
-        string sourceLanguage,
-        string targetLanguage,
-        double windowSeconds,
-        int maxChars,
-        IReadOnlyList<string>? meaningIssues,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceText);
-        ArgumentException.ThrowIfNullOrWhiteSpace(currentTranslation);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
-
-        string sourceDisplay = LanguageDisplayName(sourceLanguage);
-        string targetDisplay = LanguageDisplayName(targetLanguage);
-
-        string issuesLine = string.Empty;
-        if (meaningIssues is not null && meaningIssues.Count > 0)
-        {
-            string joined = string.Join("; ", meaningIssues.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
-            if (!string.IsNullOrWhiteSpace(joined))
-            {
-                issuesLine = $"\nMaterial meaning issues to fix (restore the lost meaning): {joined}";
-            }
-        }
-
+        string sourceDisplay = LanguageDisplayName(request.SourceLanguage);
+        string targetDisplay = LanguageDisplayName(request.TargetLanguage);
+        string issuesLine = BuildIssuesLine(request.MeaningIssues);
         string revisionInstruction = string.IsNullOrEmpty(issuesLine)
-            ? $"Rewrite it shorter, at most {maxChars} characters, preserving meaning."
-            : $"Fix the listed meaning issues and restore lost meaning, at most {maxChars} characters, without shortening further than necessary.";
+            ? $"Rewrite it shorter, at most {request.MaxChars} characters, preserving meaning."
+            : $"Fix the listed meaning issues and restore lost meaning, at most {request.MaxChars} characters, without shortening further than necessary.";
 
         IReadOnlyList<ChatMessage> messages =
         [
-            new ChatMessage("system", $"You are a translation engine. Revise the {targetDisplay} translation of the given {sourceDisplay} line so it preserves the meaning but fits a dubbing window of approximately {windowSeconds:0.0#} seconds. Keep the output at most {maxChars} characters. Output only the revised translation, with no quotes, notes, or explanation."),
-            new ChatMessage("user", $"Original {sourceDisplay}: {sourceText}\nCurrent {targetDisplay} ({currentTranslation.Length} chars): {currentTranslation}\n{revisionInstruction}{issuesLine}"),
+            new ChatMessage("system", $"You are a translation engine. Revise the {targetDisplay} translation of the given {sourceDisplay} line so it preserves the meaning but fits a dubbing window of approximately {request.WindowSeconds:0.0#} seconds. Keep the output at most {request.MaxChars} characters. Output only the revised translation, with no quotes, notes, or explanation."),
+            new ChatMessage("user", $"Original {sourceDisplay}: {request.SourceText}\nCurrent {targetDisplay} ({request.CurrentTranslation.Length} chars): {request.CurrentTranslation}\n{revisionInstruction}{issuesLine}"),
         ];
 
-        return ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken);
+        return ChatCompletionWithUsageAsync(new ChatRequest(messages), cancellationToken);
+    }
+
+    private static void ValidateRevisionRequest(TimingRevisionRequest request)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceText);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.CurrentTranslation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetLanguage);
+    }
+
+    private static string BuildIssuesLine(IReadOnlyList<string>? meaningIssues)
+    {
+        if (meaningIssues is null || meaningIssues.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        string joined = string.Join("; ", meaningIssues.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()));
+        return string.IsNullOrWhiteSpace(joined) ? string.Empty : $"\nMaterial meaning issues to fix (restore the lost meaning): {joined}";
     }
 
     /// <summary>
     /// Meaning-fidelity check via the Meta API. Prompt-only JSON with resilient parser (exercised path).
     /// </summary>
-    public async Task<MeaningCheckResult> CheckMeaningAsync(
-        string sourceText,
-        string candidateTranslation,
-        string sourceLanguage,
-        string targetLanguage,
-        CancellationToken cancellationToken = default)
+    public async Task<MeaningCheckResult> CheckMeaningAsync(MeaningCheckRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceText);
-        ArgumentException.ThrowIfNullOrWhiteSpace(candidateTranslation);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
-
-        string sourceDisplay = LanguageDisplayName(sourceLanguage);
-        string targetDisplay = LanguageDisplayName(targetLanguage);
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateMeaningRequest(request);
 
         IReadOnlyList<ChatMessage> messages =
         [
             new ChatMessage("system", MeaningGate.BuildSystemPrompt()),
-            new ChatMessage("user", MeaningGate.BuildUserPrompt(sourceText, candidateTranslation, sourceDisplay, targetDisplay)),
+            new ChatMessage("user", MeaningGate.BuildUserPrompt(
+                request.SourceText,
+                request.CandidateTranslation,
+                LanguageDisplayName(request.SourceLanguage),
+                LanguageDisplayName(request.TargetLanguage))),
         ];
 
-        ChatCompletionResult raw = await ChatCompletionWithUsageAsync(messages, cancellationToken: cancellationToken).ConfigureAwait(false);
-        string endpointHost = GetEndpointHostForUsage();
-        return MeaningGate.ParseAndNormalize(raw.Content, raw.Model, raw.Usage, endpointHost);
+        ChatCompletionResult raw = await ChatCompletionWithUsageAsync(new ChatRequest(messages), cancellationToken).ConfigureAwait(false);
+        return MeaningGate.ParseAndNormalize(raw.Content, raw.Model, raw.Usage, GetEndpointHostForUsage());
+    }
+
+    private static void ValidateMeaningRequest(MeaningCheckRequest request)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceText);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.CandidateTranslation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetLanguage);
+    }
+
+    /// <summary>
+    /// Segment one concept phrase in one frame via POST /v1/responses (probe-verified:
+    /// sam-3.1 is not served on /chat/completions). The concept is sent verbatim as the
+    /// input_text part; a generic instruction returns empty output_text. A concept hit
+    /// returns output_text carrying box/mask tokens; a miss returns empty output_text,
+    /// which is a valid result here, not an error.
+    /// </summary>
+    public async Task<SegmentationResponseResult> SegmentConceptAsync(SegmentationRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        string imageUrl = ValidateImageUrl(request.FrameImageDataUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Concept);
+
+        string resolvedModel = string.IsNullOrWhiteSpace(request.Model) ? MetaAuth.GetSceneModel() : request.Model.Trim();
+        var payload = new ResponsesRequest(
+            resolvedModel,
+            [new ResponsesInputItem("user",
+                [new ResponsesContentPart("input_text", request.Concept.Trim(), null),
+                 new ResponsesContentPart("input_image", null, imageUrl)])]);
+
+        using HttpRequestMessage httpRequest = CreateAuthorizedRequest(
+            HttpMethod.Post,
+            $"{MetaAuth.GetBaseUrl().TrimEnd('/')}/responses",
+            JsonSerializer.Serialize(payload, JsonOptions));
+        string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        return SegmentationResponseParser.Parse(new SegmentationBody(new BodyText(body), new ModelId(resolvedModel)));
+    }
+
+    private static string ValidateImageUrl(string frameImageDataUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(frameImageDataUrl);
+        string imageUrl = frameImageDataUrl.Trim();
+        if (!imageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
+            && !imageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Frame image must be a data:image/ URL or an https:// URL.", nameof(frameImageDataUrl));
+        }
+
+        return imageUrl;
+    }
+
+    private static HttpRequestMessage CreateAuthorizedRequest(HttpMethod method, string url, string? json)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", MetaAuth.GetApiKey());
+        if (json is not null)
+        {
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        }
+
+        return request;
+    }
+
+    private async Task<string> SendForBodyAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new MetaApiException($"Meta Model API request failed: {ex.Message}", ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new MetaApiException("Meta Model API request timed out.", ex);
+        }
+
+        using (response)
+        {
+            string body = response.Content is null
+                ? string.Empty
+                : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new MetaApiException($"Meta Model API HTTP {(int)response.StatusCode}: {Truncate(new BodyText(body))}");
+            }
+
+            return body;
+        }
+    }
+
+    private static string ResolveModel(string? model)
+    {
+        return string.IsNullOrWhiteSpace(model) ? MetaAuth.GetModel() : model.Trim();
     }
 
     private static string GetEndpointHostForUsage()
@@ -336,19 +360,171 @@ public sealed class MetaClient : IDisposable
 
     private static string LanguageDisplayName(string code)
     {
-        return code.Trim().ToLowerInvariant() switch
+        string trimmed = code.Trim();
+        return LanguageNames.TryGetValue(trimmed, out string? name) ? name : trimmed;
+    }
+
+    private static string Truncate(BodyText body)
+    {
+        return body.Value.Length > 500 ? body.Value[..500] : body.Value;
+    }
+
+    private sealed record BodyText(string Value);
+
+    private sealed record ModelId(string Value);
+
+    private sealed record FieldName(string Value);
+
+    private sealed record SegmentationBody(BodyText Body, ModelId Model);
+
+    private sealed record UsageResult(TokenUsage? Usage, int ImagesProcessed);
+
+    private static class SegmentationResponseParser
+    {
+        public static SegmentationResponseResult Parse(SegmentationBody body)
         {
-            "en" => "English",
-            "es" => "Spanish",
-            "fr" => "French",
-            "de" => "German",
-            "pt" => "Portuguese",
-            "it" => "Italian",
-            "ja" => "Japanese",
-            "ko" => "Korean",
-            "zh" => "Chinese",
-            _ => code.Trim(),
-        };
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(body.Body.Value);
+            }
+            catch (JsonException ex)
+            {
+                throw new MetaApiException($"Failed to parse Meta Model API response: {Truncate(body.Body)}", ex);
+            }
+
+            using (doc)
+            {
+                JsonElement root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    throw new MetaApiException($"Unexpected Meta Model API response shape: {Truncate(body.Body)}");
+                }
+
+                string? error = ErrorMessage(root);
+                if (error is not null)
+                {
+                    throw new MetaApiException($"Meta Model API error: {error}");
+                }
+
+                string? status = Status(root);
+                if (status is not null && !string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new MetaApiException($"Meta Model API response not completed (status: {status}).");
+                }
+
+                UsageResult usage = Usage(root);
+                return new SegmentationResponseResult(
+                    string.Concat(TextParts(root)),
+                    ResponseModel(root, body.Model),
+                    usage.Usage,
+                    usage.ImagesProcessed,
+                    ResponseId(root));
+            }
+        }
+
+        private static string? ErrorMessage(JsonElement root)
+        {
+            if (!root.TryGetProperty("error", out JsonElement error) || error.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            return error.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.String
+                ? message.GetString() ?? "unknown error"
+                : "unknown error";
+        }
+
+        private static string? Status(JsonElement root)
+        {
+            return root.TryGetProperty("status", out JsonElement status) && status.ValueKind == JsonValueKind.String
+                ? status.GetString()
+                : null;
+        }
+
+        private static string ResponseModel(JsonElement root, ModelId fallback)
+        {
+            return root.TryGetProperty("model", out JsonElement model) && model.ValueKind == JsonValueKind.String
+                ? model.GetString() ?? fallback.Value
+                : fallback.Value;
+        }
+
+        private static string? ResponseId(JsonElement root)
+        {
+            return root.TryGetProperty("id", out JsonElement id) && id.ValueKind == JsonValueKind.String
+                ? id.GetString()
+                : null;
+        }
+
+        private static IEnumerable<string> TextParts(JsonElement root)
+        {
+            if (!root.TryGetProperty("output", out JsonElement output) || output.ValueKind != JsonValueKind.Array)
+            {
+                throw new MetaApiException($"Unexpected Meta Model API response shape: missing or non-array 'output'.");
+            }
+
+            var parts = new List<string>();
+            foreach (JsonElement item in output.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    throw new MetaApiException("Unexpected Meta Model API output item shape.");
+                }
+
+                foreach (JsonElement part in ContentParts(item))
+                {
+                    if (IsOutputText(part))
+                    {
+                        parts.Add(part.GetProperty("text").GetString() ?? string.Empty);
+                    }
+                }
+            }
+
+            return parts;
+        }
+
+        private static IEnumerable<JsonElement> ContentParts(JsonElement item)
+        {
+            if (!item.TryGetProperty("content", out JsonElement content) || content.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return content.EnumerateArray();
+        }
+
+        private static bool IsOutputText(JsonElement part)
+        {
+            return part.TryGetProperty("type", out JsonElement type)
+                && type.ValueKind == JsonValueKind.String
+                && string.Equals(type.GetString(), "output_text", StringComparison.Ordinal)
+                && part.TryGetProperty("text", out JsonElement text)
+                && text.ValueKind == JsonValueKind.String;
+        }
+
+        private static UsageResult Usage(JsonElement root)
+        {
+            if (!root.TryGetProperty("usage", out JsonElement usage) || usage.ValueKind != JsonValueKind.Object)
+            {
+                return new UsageResult(null, 0);
+            }
+
+            return new UsageResult(
+                new TokenUsage(
+                    GetInt(usage, new FieldName("input_tokens")),
+                    GetInt(usage, new FieldName("output_tokens")),
+                    GetInt(usage, new FieldName("total_tokens"))),
+                GetInt(usage, new FieldName("images_processed")));
+        }
+
+        private static int GetInt(JsonElement obj, FieldName name)
+        {
+            return obj.TryGetProperty(name.Value, out JsonElement value)
+                && value.ValueKind == JsonValueKind.Number
+                && value.TryGetInt32(out int number)
+                ? number
+                : 0;
+        }
     }
 
     // Wire format
@@ -400,9 +576,59 @@ public sealed class MetaClient : IDisposable
         int CompletionTokens,
         int TotalTokens);
 
+    private sealed record ResponsesRequest(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("input")] ResponsesInputItem[] Input);
+
+    private sealed record ResponsesInputItem(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("content")] ResponsesContentPart[] Content);
+
+    private sealed record ResponsesContentPart(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("text")] string? Text,
+        [property: JsonPropertyName("image_url")] string? ImageUrl);
+
+    /// <summary>Raw /v1/responses segmentation outcome. OutputText is empty on a concept miss.</summary>
+    public sealed record SegmentationResponseResult(
+        string OutputText,
+        string Model,
+        TokenUsage? Usage,
+        int ImagesProcessed,
+        string? ResponseId);
+
     public sealed record ModelInfo(
         string Id,
         string Object,
         long Created,
         string OwnedBy);
+
+    public sealed record ChatRequest(
+        IReadOnlyList<ChatMessage> Messages,
+        string? Model = null);
+
+    public sealed record TranslationRequest(
+        string Text,
+        string SourceLanguage,
+        string TargetLanguage);
+
+    public sealed record TimingRevisionRequest(
+        string SourceText,
+        string CurrentTranslation,
+        string SourceLanguage,
+        string TargetLanguage,
+        double WindowSeconds,
+        int MaxChars,
+        IReadOnlyList<string>? MeaningIssues = null);
+
+    public sealed record MeaningCheckRequest(
+        string SourceText,
+        string CandidateTranslation,
+        string SourceLanguage,
+        string TargetLanguage);
+
+    public sealed record SegmentationRequest(
+        string FrameImageDataUrl,
+        string Concept,
+        string? Model = null);
 }

@@ -300,4 +300,54 @@ describe("App smoke", () => {
     expect(await screen.findByText(/dropped modality/)).toBeInTheDocument();
     expect(screen.getByText(/Candidate omits obligation/)).toBeInTheDocument();
   });
+
+  it("shows read-only scene context after Run Scene", async () => {
+    const sceneMock = {
+      segments: [
+        {
+          id: "seg-001",
+          status: "Parsed",
+          context: {
+            speaker_id: "spk-1",
+            regions: [{ concept: "red rectangle", x1: 10, y1: 10, x2: 29, y2: 49, frame_width: 64, frame_height: 64, mask_x: 0, mask_y: 0, mask_data: "40,20,abc" }],
+          },
+          provenance: { model_id: "sam-3.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "scene-v1" },
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          images_processed: 1,
+        },
+        {
+          id: "seg-002",
+          status: "Empty",
+          context: {},
+          provenance: { model_id: "sam-3.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "scene-v1" },
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          images_processed: 0,
+        },
+      ],
+      usage_total: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      images_processed_total: 1,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/scene-context")) return new Response(JSON.stringify(sceneMock), { status: 200 });
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Scene" }).click();
+    await waitFor(() => expect(screen.getByText("Scene: Parsed")).toBeInTheDocument());
+
+    const seg1 = getCard("seg-001");
+    expect(within(seg1).getByText(/Region: red rectangle \(10,10\)-\(29,49\) in 64x64/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Speaker: spk-1/)).toBeInTheDocument();
+    // Un-evidenced fields render as unknown, never as invented values.
+    expect(within(seg1).getByText(/Scene summary: —/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Scene gate: model sam-3\.1 · template scene-v1/)).toBeInTheDocument();
+
+    const seg2 = getCard("seg-002");
+    expect(within(seg2).getByText("Scene: Empty")).toBeInTheDocument();
+  });
 });

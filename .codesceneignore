@@ -1,0 +1,4 @@
+# Generated frontend build output (Vite emits into the server's wwwroot).
+src/Trackdub.Director.Server/wwwroot/assets/
+/src/Trackdub.Director.Server/wwwroot/assets/
+**/wwwroot/assets/

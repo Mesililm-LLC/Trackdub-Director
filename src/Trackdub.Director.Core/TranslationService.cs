@@ -94,9 +94,7 @@ public sealed class TranslationService
         foreach (TranslationSegmentInput segment in segments)
         {
             MetaClient.ChatCompletionResult result = await _client.TranslateWithUsageAsync(
-                segment.Text,
-                sourceLanguage,
-                targetLanguage,
+                new MetaClient.TranslationRequest(segment.Text, sourceLanguage, targetLanguage),
                 cancellationToken).ConfigureAwait(false);
 
             int promptTokens = result.Usage?.PromptTokens ?? 0;
