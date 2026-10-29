@@ -215,134 +215,56 @@ public sealed class QaService
         string endpointHost, MetaClient.TokenUsage? usage, string modelId,
         TokenAccum tokenAccum, CancellationToken cancellationToken)
     {
-        QaVerdict timingVerdict = fits ? QaVerdict.Pass : QaVerdict.Fail;
-
-        if (!fits)
+        MeaningCheckResult? meaning = null;
+        if (fits)
         {
-            // Skip meaning when timing fails
-            QaVerdict combined = QaVerdict.Fail;
-            return new QaAttemptReport(
-                AttemptNumber: attemptNumber,
-                Kind: kind,
-                Translation: translation,
-                EstimatedSeconds: est,
-                WindowSeconds: window,
-                MaxChars: maxChars,
-                Verdict: combined,
-                PromptTokens: usage?.PromptTokens ?? 0,
-                CompletionTokens: usage?.CompletionTokens ?? 0,
-                TotalTokens: usage?.TotalTokens ?? 0,
-                ModelId: modelId,
-                TimingVerdict: timingVerdict,
-                MeaningVerdict: MeaningVerdict.NotEvaluated,
-                MeaningIssues: null,
-                MeaningExplanation: null,
-                MeaningModelId: null,
-                MeaningPromptTemplateVersion: null,
-                MeaningTimestampUtc: null,
-                MeaningPromptTokens: 0,
-                MeaningCompletionTokens: 0,
-                MeaningTotalTokens: 0,
-                MeaningEndpointHost: null);
-        }
-
-        // Timing passed: call meaning check
-        try
-        {
-            MeaningCheckResult meaning = await _client.CheckMeaningAsync(
-                sourceText, translation, sourceLanguage, targetLanguage, cancellationToken).ConfigureAwait(false);
-
-            if (meaning.Verdict == MeaningVerdict.Error)
+            try
             {
-                // Transport/API failure: combined Fail, terminal
-                tokenAccum.Add(meaning.Usage);
-                return new QaAttemptReport(
-                    AttemptNumber: attemptNumber,
-                    Kind: kind,
-                    Translation: translation,
-                    EstimatedSeconds: est,
-                    WindowSeconds: window,
-                    MaxChars: maxChars,
-                    Verdict: QaVerdict.Fail,
-                    PromptTokens: usage?.PromptTokens ?? 0,
-                    CompletionTokens: usage?.CompletionTokens ?? 0,
-                    TotalTokens: usage?.TotalTokens ?? 0,
-                    ModelId: modelId,
-                    TimingVerdict: timingVerdict,
-                    MeaningVerdict: MeaningVerdict.Error,
-                    MeaningIssues: meaning.Issues,
-                    MeaningExplanation: meaning.Explanation,
-                    MeaningModelId: meaning.ModelId,
-                    MeaningPromptTemplateVersion: meaning.PromptTemplateVersion,
-                    MeaningTimestampUtc: meaning.TimestampUtc,
-                    MeaningPromptTokens: meaning.Usage?.PromptTokens ?? 0,
-                    MeaningCompletionTokens: meaning.Usage?.CompletionTokens ?? 0,
-                    MeaningTotalTokens: meaning.Usage?.TotalTokens ?? 0,
-                    MeaningEndpointHost: endpointHost);
+                meaning = await _client.CheckMeaningAsync(
+                    sourceText, translation, sourceLanguage, targetLanguage, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (
+                ex is MetaApiException or HttpRequestException or InvalidOperationException
+                || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                meaning = MeaningGate.ForError(ex.Message, modelId, null, endpointHost);
             }
 
             tokenAccum.Add(meaning.Usage);
-            QaVerdict combined = (timingVerdict == QaVerdict.Pass && meaning.Verdict == MeaningVerdict.Pass)
-                ? QaVerdict.Pass : QaVerdict.Fail;
+        }
 
-            return new QaAttemptReport(
-                AttemptNumber: attemptNumber,
-                Kind: kind,
-                Translation: translation,
-                EstimatedSeconds: est,
-                WindowSeconds: window,
-                MaxChars: maxChars,
-                Verdict: combined,
-                PromptTokens: usage?.PromptTokens ?? 0,
-                CompletionTokens: usage?.CompletionTokens ?? 0,
-                TotalTokens: usage?.TotalTokens ?? 0,
-                ModelId: modelId,
-                TimingVerdict: timingVerdict,
-                MeaningVerdict: meaning.Verdict,
-                MeaningIssues: meaning.Issues,
-                MeaningExplanation: meaning.Explanation,
-                MeaningModelId: meaning.ModelId,
-                MeaningPromptTemplateVersion: meaning.PromptTemplateVersion,
-                MeaningTimestampUtc: meaning.TimestampUtc,
-                MeaningPromptTokens: meaning.Usage?.PromptTokens ?? 0,
-                MeaningCompletionTokens: meaning.Usage?.CompletionTokens ?? 0,
-                MeaningTotalTokens: meaning.Usage?.TotalTokens ?? 0,
-                MeaningEndpointHost: endpointHost);
-        }
-        // Transport/API failure becomes a MeaningVerdict.Error attempt (combined Fail, no revision).
-        // Caller cancellation is NOT a meaning error: it must propagate so the loop stops instead of
-        // continuing to burn API calls across remaining segments.
-        catch (Exception ex) when (
-            ex is MetaApiException or HttpRequestException or InvalidOperationException
-            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
-        {
-            string msg = ex.Message ?? ex.GetType().Name;
-            var err = MeaningGate.ForError(msg, modelId, null, endpointHost);
-            tokenAccum.Add(err.Usage);
-            return new QaAttemptReport(
-                AttemptNumber: attemptNumber,
-                Kind: kind,
-                Translation: translation,
-                EstimatedSeconds: est,
-                WindowSeconds: window,
-                MaxChars: maxChars,
-                Verdict: QaVerdict.Fail,
-                PromptTokens: usage?.PromptTokens ?? 0,
-                CompletionTokens: usage?.CompletionTokens ?? 0,
-                TotalTokens: usage?.TotalTokens ?? 0,
-                ModelId: modelId,
-                TimingVerdict: timingVerdict,
-                MeaningVerdict: MeaningVerdict.Error,
-                MeaningIssues: err.Issues,
-                MeaningExplanation: err.Explanation,
-                MeaningModelId: err.ModelId,
-                MeaningPromptTemplateVersion: err.PromptTemplateVersion,
-                MeaningTimestampUtc: err.TimestampUtc,
-                MeaningPromptTokens: err.Usage?.PromptTokens ?? 0,
-                MeaningCompletionTokens: err.Usage?.CompletionTokens ?? 0,
-                MeaningTotalTokens: err.Usage?.TotalTokens ?? 0,
-                MeaningEndpointHost: endpointHost);
-        }
+        return CreateAttemptReport(attemptNumber, kind, translation, est, window, maxChars,
+            fits, usage, modelId, meaning, endpointHost);
+    }
+
+    private static QaAttemptReport CreateAttemptReport(
+        int attemptNumber, QaAttemptKind kind, string translation, double est, double window,
+        int maxChars, bool fits, MetaClient.TokenUsage? usage, string modelId,
+        MeaningCheckResult? meaning, string endpointHost)
+    {
+        return new QaAttemptReport(
+            AttemptNumber: attemptNumber,
+            Kind: kind,
+            Translation: translation,
+            EstimatedSeconds: est,
+            WindowSeconds: window,
+            MaxChars: maxChars,
+            Verdict: meaning?.Verdict == MeaningVerdict.Pass ? QaVerdict.Pass : QaVerdict.Fail,
+            PromptTokens: usage?.PromptTokens ?? 0,
+            CompletionTokens: usage?.CompletionTokens ?? 0,
+            TotalTokens: usage?.TotalTokens ?? 0,
+            ModelId: modelId,
+            TimingVerdict: fits ? QaVerdict.Pass : QaVerdict.Fail,
+            MeaningVerdict: meaning?.Verdict ?? MeaningVerdict.NotEvaluated,
+            MeaningIssues: meaning?.Issues,
+            MeaningExplanation: meaning?.Explanation,
+            MeaningModelId: meaning?.ModelId,
+            MeaningPromptTemplateVersion: meaning?.PromptTemplateVersion,
+            MeaningTimestampUtc: meaning?.TimestampUtc,
+            MeaningPromptTokens: meaning?.Usage?.PromptTokens ?? 0,
+            MeaningCompletionTokens: meaning?.Usage?.CompletionTokens ?? 0,
+            MeaningTotalTokens: meaning?.Usage?.TotalTokens ?? 0,
+            MeaningEndpointHost: meaning is null ? null : endpointHost);
     }
 
     public async Task WriteReportAsync(

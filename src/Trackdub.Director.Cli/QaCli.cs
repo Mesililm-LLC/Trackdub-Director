@@ -157,36 +157,42 @@ internal static class QaCli
             string firstTiming = seg.FirstAttempt.TimingVerdict == QaVerdict.Pass ? "pass" : "fail";
             string firstMeaning = seg.FirstAttempt.MeaningVerdict == MeaningVerdict.NotEvaluated ? "not checked" : seg.FirstAttempt.MeaningVerdict.ToString().ToLowerInvariant();
             Console.WriteLine($"  {seg.Id}: window {seg.WindowSeconds:0.00}s | first {firstFlag} (timing {firstTiming} meaning {firstMeaning} {seg.FirstAttempt.EstimatedSeconds:0.00}s, {seg.FirstAttempt.Translation.Length}c) | final {flag} ({seg.FinalTranslation.Length}c, {seg.TokenUsage.TotalTokens} tok) | revisions {seg.Revisions.Length}");
-            if (seg.FirstAttempt.MeaningIssues is not null && seg.FirstAttempt.MeaningIssues.Length > 0)
+            PrintFirstMeaning(seg.FirstAttempt);
+            PrintRevisions(seg.Revisions);
+        }
+    }
+
+    private static void PrintFirstMeaning(QaAttemptReport attempt)
+    {
+        if (attempt.MeaningIssues is not null && attempt.MeaningIssues.Length > 0)
+        {
+            Console.WriteLine($"    first meaning issues: {string.Join("; ", attempt.MeaningIssues)}");
+            if (!string.IsNullOrWhiteSpace(attempt.MeaningExplanation))
             {
-                Console.WriteLine($"    first meaning issues: {string.Join("; ", seg.FirstAttempt.MeaningIssues)}");
-                if (!string.IsNullOrWhiteSpace(seg.FirstAttempt.MeaningExplanation))
-                {
-                    Console.WriteLine($"    first meaning explanation: {seg.FirstAttempt.MeaningExplanation}");
-                }
+                Console.WriteLine($"    first meaning explanation: {attempt.MeaningExplanation}");
             }
-            else if (!string.IsNullOrWhiteSpace(seg.FirstAttempt.MeaningExplanation) && seg.FirstAttempt.MeaningVerdict == MeaningVerdict.Error)
+        }
+        else if (!string.IsNullOrWhiteSpace(attempt.MeaningExplanation) && attempt.MeaningVerdict == MeaningVerdict.Error)
+        {
+            Console.WriteLine($"    first meaning error: {attempt.MeaningExplanation}");
+        }
+    }
+
+    private static void PrintRevisions(QaAttemptReport[] revisions)
+    {
+        foreach (QaAttemptReport rev in revisions)
+        {
+            string timing = rev.TimingVerdict == QaVerdict.Pass ? "pass" : "fail";
+            string meaning = rev.MeaningVerdict == MeaningVerdict.NotEvaluated ? "not checked" : rev.MeaningVerdict.ToString().ToLowerInvariant();
+            Console.WriteLine($"    rev #{rev.AttemptNumber}: {rev.Verdict.ToString().ToLowerInvariant()} (timing {timing} meaning {meaning}) {rev.EstimatedSeconds:0.00}s \"{Trunc(rev.Translation, 64)}\" meanTok {rev.MeaningTotalTokens}");
+            if (rev.MeaningIssues is not null && rev.MeaningIssues.Length > 0)
             {
-                Console.WriteLine($"    first meaning error: {seg.FirstAttempt.MeaningExplanation}");
+                Console.WriteLine($"      meaning issues: {string.Join("; ", rev.MeaningIssues)}");
             }
 
-            if (seg.Revisions.Length > 0)
+            if (!string.IsNullOrWhiteSpace(rev.MeaningExplanation))
             {
-                foreach (QaAttemptReport rev in seg.Revisions)
-                {
-                    string timing = rev.TimingVerdict == QaVerdict.Pass ? "pass" : "fail";
-                    string meaning = rev.MeaningVerdict == MeaningVerdict.NotEvaluated ? "not checked" : rev.MeaningVerdict.ToString().ToLowerInvariant();
-                    Console.WriteLine($"    rev #{rev.AttemptNumber}: {rev.Verdict.ToString().ToLowerInvariant()} (timing {timing} meaning {meaning}) {rev.EstimatedSeconds:0.00}s \"{Trunc(rev.Translation, 64)}\" meanTok {rev.MeaningTotalTokens}");
-                    if (rev.MeaningIssues is not null && rev.MeaningIssues.Length > 0)
-                    {
-                        Console.WriteLine($"      meaning issues: {string.Join("; ", rev.MeaningIssues)}");
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(rev.MeaningExplanation))
-                    {
-                        Console.WriteLine($"      meaning: {rev.MeaningExplanation}");
-                    }
-                }
+                Console.WriteLine($"      meaning: {rev.MeaningExplanation}");
             }
         }
     }

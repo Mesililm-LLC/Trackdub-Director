@@ -119,34 +119,7 @@ public static class MeaningGate
                 verdictRaw = vEl.ValueKind == JsonValueKind.String ? vEl.GetString() : null;
             }
 
-            // Fail closed when the issues field is present but malformed: a wrong-typed or
-            // non-string element array must never silently degrade to "no issues", which would
-            // turn a reported meaning loss into a pass.
-            string[] issues = [];
-            if (root.TryGetProperty("issues", out JsonElement issuesEl))
-            {
-                if (issuesEl.ValueKind != JsonValueKind.Array)
-                {
-                    throw new JsonException("Meaning response 'issues' must be an array of strings.");
-                }
-
-                var list = new List<string>();
-                foreach (JsonElement e in issuesEl.EnumerateArray())
-                {
-                    if (e.ValueKind != JsonValueKind.String)
-                    {
-                        throw new JsonException("Meaning response 'issues' elements must be strings.");
-                    }
-
-                    string? s = e.GetString();
-                    if (!string.IsNullOrWhiteSpace(s))
-                    {
-                        list.Add(s.Trim());
-                    }
-                }
-
-                issues = list.ToArray();
-            }
+            string[] issues = ParseIssues(root);
 
             string explanation = string.Empty;
             if (root.TryGetProperty("explanation", out JsonElement expEl) && expEl.ValueKind == JsonValueKind.String)
@@ -193,6 +166,36 @@ public static class MeaningGate
             string explanation = $"Unparseable meaning response; failing closed. Raw: {Truncate(rawContent, 300)}";
             return new MeaningCheckResult(MeaningVerdict.Fail, ["unparseable meaning response"], explanation, modelId, PromptTemplateVersion, timestampUtc, usage, rawContent);
         }
+    }
+
+    private static string[] ParseIssues(JsonElement root)
+    {
+        if (!root.TryGetProperty("issues", out JsonElement issues))
+        {
+            return [];
+        }
+
+        if (issues.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException("Meaning response 'issues' must be an array of strings.");
+        }
+
+        var result = new List<string>();
+        foreach (JsonElement item in issues.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                throw new JsonException("Meaning response 'issues' elements must be strings.");
+            }
+
+            string? issue = item.GetString();
+            if (!string.IsNullOrWhiteSpace(issue))
+            {
+                result.Add(issue.Trim());
+            }
+        }
+
+        return result.ToArray();
     }
 
     /// <summary>
