@@ -38,129 +38,130 @@ public sealed class SceneContextService
             throw new ArgumentException("At least one segment is required.", nameof(segments));
         }
 
-        string endpointHost = GetEndpointHost();
+        var run = new SceneRunContext(GetEndpointHost(), MetaAuth.GetSceneModel());
         var results = new List<SceneSegmentResult>(segments.Count);
-        int totalPrompt = 0;
-        int totalCompletion = 0;
-        int totalTokens = 0;
-        int totalImages = 0;
 
         foreach (SceneSegmentInput segment in segments)
         {
-            SceneSegmentResult result = await ProcessSegmentAsync(segment, endpointHost, cancellationToken).ConfigureAwait(false);
-            results.Add(result);
-            totalPrompt += result.Usage.PromptTokens;
-            totalCompletion += result.Usage.CompletionTokens;
-            totalTokens += result.Usage.TotalTokens;
-            totalImages += result.ImagesProcessed;
+            results.Add(await ProcessSegmentAsync(segment, run, cancellationToken).ConfigureAwait(false));
         }
 
-        return new SceneContextBatch(
-            results.ToArray(),
-            new TranslationUsageSummary(totalPrompt, totalCompletion, totalTokens),
-            totalImages);
+        return BuildBatch(results);
+    }
+
+    private static SceneContextBatch BuildBatch(List<SceneSegmentResult> results)
+    {
+        int prompt = 0;
+        int completion = 0;
+        int tokens = 0;
+        int images = 0;
+
+        foreach (SceneSegmentResult result in results)
+        {
+            prompt += result.Usage.PromptTokens;
+            completion += result.Usage.CompletionTokens;
+            tokens += result.Usage.TotalTokens;
+            images += result.ImagesProcessed;
+        }
+
+        return new SceneContextBatch(results.ToArray(), new TranslationUsageSummary(prompt, completion, tokens), images);
     }
 
     private async Task<SceneSegmentResult> ProcessSegmentAsync(
         SceneSegmentInput segment,
-        string endpointHost,
+        SceneRunContext run,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(segment.Id);
 
-        string? speakerId = NullIfBlank(segment.SpeakerId);
-        string? speakerLabel = NullIfBlank(segment.SpeakerLabel);
-        string[] concepts = (segment.Concepts ?? [])
+        var work = new SegmentWork(
+            segment,
+            run,
+            NullIfBlank(segment.SpeakerId),
+            NullIfBlank(segment.SpeakerLabel),
+            NormalizeConcepts(segment.Concepts));
+
+        if (string.IsNullOrWhiteSpace(segment.FrameImageDataUrl) || work.Concepts.Length == 0)
+        {
+            // Nothing to query: honest Empty with Regions null (unknown, not "none found").
+            return EmptyResult(work);
+        }
+
+        return await SegmentConceptsAsync(work, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static SceneSegmentResult EmptyResult(SegmentWork work)
+    {
+        return new SceneSegmentResult(
+            work.Segment.Id,
+            SceneContextStatus.Empty,
+            new DirectorContext(work.SpeakerId, work.SpeakerLabel, null, null, null, Regions: null),
+            Error: null,
+            Provenance(work.Run, work.Run.ModelId),
+            new TranslationUsage(0, 0, 0),
+            ImagesProcessed: 0,
+            RawContent: null);
+    }
+
+    private async Task<SceneSegmentResult> SegmentConceptsAsync(SegmentWork work, CancellationToken cancellationToken)
+    {
+        var accumulator = new SegmentationAccumulator(work.Run.ModelId);
+
+        foreach (string concept in work.Concepts)
+        {
+            SceneSegmentResult? failure = await AccumulateConceptAsync(accumulator, work, concept, cancellationToken).ConfigureAwait(false);
+            if (failure is not null)
+            {
+                return failure;
+            }
+        }
+
+        return accumulator.Parsed(work);
+    }
+
+    private async Task<SceneSegmentResult?> AccumulateConceptAsync(
+        SegmentationAccumulator accumulator,
+        SegmentWork work,
+        string concept,
+        CancellationToken cancellationToken)
+    {
+        MetaClient.SegmentationResponseResult response;
+        try
+        {
+            response = await _client.SegmentConceptAsync(
+                work.Segment.FrameImageDataUrl!, concept, model: null, cancellationToken).ConfigureAwait(false);
+        }
+        catch (MetaApiException ex) when (!IsMissingKey(ex))
+        {
+            return accumulator.Failure(work, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return accumulator.Failure(work, ex.Message);
+        }
+
+        accumulator.Add(response);
+        SegmentationParseResult parsed = SceneSegmentationParser.Parse(response.OutputText, concept);
+        if (parsed.IsMalformed)
+        {
+            return accumulator.Failure(work, parsed.Error ?? "Malformed segmentation response.");
+        }
+
+        accumulator.AddRegions(parsed.Regions);
+        return null;
+    }
+
+    private static bool IsMissingKey(MetaApiException ex)
+    {
+        return ex.Message.Contains("No Meta Model API key", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string[] NormalizeConcepts(string[]? concepts)
+    {
+        return (concepts ?? [])
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .Select(c => c.Trim())
             .ToArray();
-
-        TranslationProvenance Provenance(string modelId) => new(
-            modelId, endpointHost, DateTime.UtcNow.ToString("O"), PromptTemplateVersion);
-
-        if (string.IsNullOrWhiteSpace(segment.FrameImageDataUrl) || concepts.Length == 0)
-        {
-            // Nothing to query: honest Empty with Regions null (unknown, not "none found").
-            return new SceneSegmentResult(
-                segment.Id,
-                SceneContextStatus.Empty,
-                new DirectorContext(speakerId, speakerLabel, null, null, null, Regions: null),
-                Error: null,
-                Provenance(MetaAuth.GetSceneModel()),
-                new TranslationUsage(0, 0, 0),
-                ImagesProcessed: 0,
-                RawContent: null);
-        }
-
-        var regions = new List<SceneRegion>();
-        var rawParts = new List<string>();
-        int promptTokens = 0;
-        int completionTokens = 0;
-        int totalTokens = 0;
-        int imagesProcessed = 0;
-        string modelId = MetaAuth.GetSceneModel();
-
-        // Local builder so Failed results keep the provenance/usage accumulated so far.
-        SceneSegmentResult Failed(string error, string? raw) => new(
-            segment.Id,
-            SceneContextStatus.Failed,
-            Context: null,
-            error.Length > 500 ? error[..500] : error,
-            Provenance(modelId),
-            new TranslationUsage(promptTokens, completionTokens, totalTokens),
-            imagesProcessed,
-            raw);
-
-        foreach (string concept in concepts)
-        {
-            MetaClient.SegmentationResponseResult response;
-            try
-            {
-                response = await _client.SegmentConceptAsync(
-                    segment.FrameImageDataUrl!, concept, model: null, cancellationToken).ConfigureAwait(false);
-            }
-            catch (MetaApiException ex) when (!ex.Message.Contains("No Meta Model API key", StringComparison.OrdinalIgnoreCase))
-            {
-                return Failed(ex.Message, rawParts.Count > 0 ? string.Join("\n", rawParts) : null);
-            }
-            catch (HttpRequestException ex)
-            {
-                return Failed(ex.Message, rawParts.Count > 0 ? string.Join("\n", rawParts) : null);
-            }
-
-            modelId = response.Model;
-            promptTokens += response.Usage?.PromptTokens ?? 0;
-            completionTokens += response.Usage?.CompletionTokens ?? 0;
-            totalTokens += response.Usage?.TotalTokens ?? ((response.Usage?.PromptTokens ?? 0) + (response.Usage?.CompletionTokens ?? 0));
-            imagesProcessed += response.ImagesProcessed;
-            rawParts.Add(response.OutputText);
-
-            SegmentationParseResult parsed = SceneSegmentationParser.Parse(response.OutputText, concept);
-            if (parsed.IsMalformed)
-            {
-                return Failed(parsed.Error ?? "Malformed segmentation response.", response.OutputText);
-            }
-
-            regions.AddRange(parsed.Regions);
-        }
-
-        var context = new DirectorContext(
-            speakerId,
-            speakerLabel,
-            EmotionToneLabel: null,
-            OnScreenText: null,
-            SceneSummary: null,
-            Regions: regions.ToArray());
-
-        return new SceneSegmentResult(
-            segment.Id,
-            regions.Count > 0 ? SceneContextStatus.Parsed : SceneContextStatus.Empty,
-            context,
-            Error: null,
-            Provenance(modelId),
-            new TranslationUsage(promptTokens, completionTokens, totalTokens),
-            imagesProcessed,
-            string.Join("\n", rawParts));
     }
 
     private static string? NullIfBlank(string? value)
@@ -177,6 +178,98 @@ public sealed class SceneContextService
         }
 
         return baseUrl;
+    }
+
+    private static TranslationProvenance Provenance(SceneRunContext run, string modelId)
+    {
+        return new TranslationProvenance(modelId, run.EndpointHost, DateTime.UtcNow.ToString("O"), PromptTemplateVersion);
+    }
+
+    private sealed record SceneRunContext(string EndpointHost, string ModelId);
+
+    private sealed record SegmentWork(
+        SceneSegmentInput Segment,
+        SceneRunContext Run,
+        string? SpeakerId,
+        string? SpeakerLabel,
+        string[] Concepts);
+
+    private sealed class SegmentationAccumulator
+    {
+        private readonly List<SceneRegion> _regions = [];
+        private readonly List<string> _rawParts = [];
+        private string _modelId;
+        private int _promptTokens;
+        private int _completionTokens;
+        private int _totalTokens;
+        private int _imagesProcessed;
+
+        public SegmentationAccumulator(string modelId)
+        {
+            _modelId = modelId;
+        }
+
+        public void Add(MetaClient.SegmentationResponseResult response)
+        {
+            _modelId = response.Model;
+            int prompt = response.Usage?.PromptTokens ?? 0;
+            int completion = response.Usage?.CompletionTokens ?? 0;
+            _promptTokens += prompt;
+            _completionTokens += completion;
+            _totalTokens += response.Usage?.TotalTokens ?? (prompt + completion);
+            _imagesProcessed += response.ImagesProcessed;
+            _rawParts.Add(response.OutputText);
+        }
+
+        public void AddRegions(IEnumerable<SceneRegion> regions)
+        {
+            _regions.AddRange(regions);
+        }
+
+        public SceneSegmentResult Failure(SegmentWork work, string error)
+        {
+            string trimmed = error.Length > 500 ? error[..500] : error;
+            return new SceneSegmentResult(
+                work.Segment.Id,
+                SceneContextStatus.Failed,
+                Context: null,
+                trimmed,
+                Provenance(work.Run, _modelId),
+                Usage(),
+                _imagesProcessed,
+                RawOrNull());
+        }
+
+        public SceneSegmentResult Parsed(SegmentWork work)
+        {
+            var context = new DirectorContext(
+                work.SpeakerId,
+                work.SpeakerLabel,
+                EmotionToneLabel: null,
+                OnScreenText: null,
+                SceneSummary: null,
+                Regions: _regions.ToArray());
+
+            return new SceneSegmentResult(
+                work.Segment.Id,
+                _regions.Count > 0 ? SceneContextStatus.Parsed : SceneContextStatus.Empty,
+                context,
+                Error: null,
+                Provenance(work.Run, _modelId),
+                Usage(),
+                _imagesProcessed,
+                string.Join("\n", _rawParts));
+        }
+
+        private TranslationUsage Usage()
+        {
+            return new TranslationUsage(_promptTokens, _completionTokens, _totalTokens);
+        }
+
+        private string? RawOrNull()
+        {
+            return _rawParts.Count > 0 ? string.Join("\n", _rawParts) : null;
+        }
     }
 }
 
@@ -203,137 +296,178 @@ public static class SceneSegmentationParser
             return new SegmentationParseResult(false, [], null);
         }
 
-        string raw = rawText.Trim();
-        MatchCollection boxes = BoxToken.Matches(raw);
-        if (boxes.Count == 0)
+        return new ParserRun(new TokenDocument(rawText.Trim(), concept.Trim())).Parse();
+    }
+
+    private sealed record TokenDocument(string Raw, string Concept);
+
+    private sealed record TokenBody(string Value, int Limit = 200);
+
+    private readonly record struct BoxBounds(int X1, int Y1, int X2, int Y2, int W, int H);
+
+    private readonly record struct MaskFields(int? X, int? Y, string? Data, string? Error);
+
+    private sealed class ParserRun
+    {
+        private readonly TokenDocument _document;
+
+        public ParserRun(TokenDocument document)
         {
-            return Malformed($"Segmentation response for concept '{concept}' contained no box token: {Truncate(raw, 200)}");
+            _document = document;
         }
 
-        MatchCollection masks = MaskToken.Matches(raw);
-        var regions = new List<SceneRegion>(boxes.Count);
-
-        for (int i = 0; i < boxes.Count; i++)
+        public SegmentationParseResult Parse()
         {
-            if (!TryParseBox(boxes[i].Groups[1].Value, out (int X1, int Y1, int X2, int Y2, int W, int H) box, out string? boxError))
+            MatchCollection boxes = BoxToken.Matches(_document.Raw);
+            if (boxes.Count == 0)
             {
-                return Malformed($"Malformed box token for concept '{concept}': {boxError}");
+                return Malformed($"Segmentation response for concept '{_document.Concept}' contained no box token: {Truncate(new TokenBody(_document.Raw))}");
             }
 
-            int? maskX = null;
-            int? maskY = null;
-            string? maskData = null;
-            if (i < masks.Count)
+            MatchCollection masks = MaskToken.Matches(_document.Raw);
+            var regions = new List<SceneRegion>(boxes.Count);
+
+            for (int i = 0; i < boxes.Count; i++)
             {
-                if (!TryParseMask(masks[i].Groups[1].Value, out maskX, out maskY, out maskData, out string? maskError))
+                string? boxError = TryParseBox(new TokenBody(boxes[i].Groups[1].Value), out BoxBounds box);
+                if (boxError is not null)
                 {
-                    return Malformed($"Malformed mask token for concept '{concept}': {maskError}");
+                    return Malformed($"Malformed box token for concept '{_document.Concept}': {boxError}");
+                }
+
+                MaskFields mask = ParseMaskAt(masks, i);
+                if (mask.Error is not null)
+                {
+                    return Malformed($"Malformed mask token for concept '{_document.Concept}': {mask.Error}");
+                }
+
+                regions.Add(new SceneRegion(_document.Concept, box.X1, box.Y1, box.X2, box.Y2, box.W, box.H, mask.X, mask.Y, mask.Data));
+            }
+
+            return new SegmentationParseResult(false, regions.ToArray(), null);
+        }
+
+        private MaskFields ParseMaskAt(MatchCollection masks, int index)
+        {
+            if (index >= masks.Count)
+            {
+                return default;
+            }
+
+            string? error = TryParseMask(new TokenBody(masks[index].Groups[1].Value), out MaskFields mask);
+            return error is null ? mask : mask with { Error = error };
+        }
+
+        private static string? TryParseBox(TokenBody body, out BoxBounds box)
+        {
+            box = default;
+            Dictionary<string, string> fields = ParseFields(body);
+            string[] required = ["x1", "y1", "x2", "y2", "w", "h"];
+            var values = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            foreach (string name in required)
+            {
+                if (!fields.TryGetValue(name, out string? rawValue)
+                    || !int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+                {
+                    return $"missing or non-integer '{name}' in '{Truncate(body)}'";
+                }
+
+                values[name] = value;
+            }
+
+            var candidate = new BoxBounds(values["x1"], values["y1"], values["x2"], values["y2"], values["w"], values["h"]);
+            if (!IsValid(candidate))
+            {
+                return $"invalid box geometry in '{Truncate(body)}'";
+            }
+
+            box = candidate;
+            return null;
+        }
+
+        private static bool IsValid(BoxBounds box)
+        {
+            return box.W > 0
+                && box.H > 0
+                && box.X1 >= 0
+                && box.Y1 >= 0
+                && box.X2 >= box.X1
+                && box.Y2 >= box.Y1;
+        }
+
+        private static string? TryParseMask(TokenBody body, out MaskFields mask)
+        {
+            mask = default;
+
+            int dataIndex = body.Value.IndexOf("data=", StringComparison.Ordinal);
+            if (dataIndex < 0)
+            {
+                return $"missing 'data=' in '{Truncate(body)}'";
+            }
+
+            // Mask data is opaque and may itself contain ';' or '=' — take the remainder verbatim.
+            string data = body.Value[(dataIndex + "data=".Length)..];
+            if (string.IsNullOrEmpty(data))
+            {
+                return "empty mask data";
+            }
+
+            Dictionary<string, string> fields = ParseFields(new TokenBody(body.Value[..dataIndex]));
+            if (!TryParseCoordinate(fields, "x", out int? x))
+            {
+                return $"non-integer mask 'x' in '{Truncate(body)}'";
+            }
+
+            if (!TryParseCoordinate(fields, "y", out int? y))
+            {
+                return $"non-integer mask 'y' in '{Truncate(body)}'";
+            }
+
+            mask = new MaskFields(x, y, data, null);
+            return null;
+        }
+
+        private static bool TryParseCoordinate(Dictionary<string, string> fields, string name, out int? value)
+        {
+            value = null;
+            if (!fields.TryGetValue(name, out string? raw))
+            {
+                return true;
+            }
+
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+            {
+                return false;
+            }
+
+            value = parsed;
+            return true;
+        }
+
+        private static Dictionary<string, string> ParseFields(TokenBody body)
+        {
+            var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (string part in body.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                int eq = part.IndexOf('=');
+                if (eq > 0)
+                {
+                    fields[part[..eq].Trim()] = part[(eq + 1)..].Trim();
                 }
             }
 
-            regions.Add(new SceneRegion(concept.Trim(), box.X1, box.Y1, box.X2, box.Y2, box.W, box.H, maskX, maskY, maskData));
+            return fields;
         }
 
-        return new SegmentationParseResult(false, regions.ToArray(), null);
+        private static string Truncate(TokenBody body)
+        {
+            return body.Value.Length <= body.Limit ? body.Value : body.Value[..(body.Limit - 3)] + "...";
+        }
+
+        private static SegmentationParseResult Malformed(string error)
+        {
+            return new SegmentationParseResult(true, [], error);
+        }
     }
-
-    private static SegmentationParseResult Malformed(string error) => new(true, [], error);
-
-    private static bool TryParseBox(
-        string body,
-        out (int X1, int Y1, int X2, int Y2, int W, int H) box,
-        out string? error)
-    {
-        box = default;
-        error = null;
-        Dictionary<string, string> fields = ParseFields(body);
-
-        string[] required = ["x1", "y1", "x2", "y2", "w", "h"];
-        var values = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (string name in required)
-        {
-            if (!fields.TryGetValue(name, out string? rawValue)
-                || !int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
-            {
-                error = $"missing or non-integer '{name}' in '{Truncate(body, 120)}'";
-                return false;
-            }
-
-            values[name] = value;
-        }
-
-        box = (values["x1"], values["y1"], values["x2"], values["y2"], values["w"], values["h"]);
-        if (box.W <= 0 || box.H <= 0 || box.X1 < 0 || box.Y1 < 0 || box.X2 < box.X1 || box.Y2 < box.Y1)
-        {
-            error = $"invalid box geometry in '{Truncate(body, 120)}'";
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool TryParseMask(string body, out int? maskX, out int? maskY, out string? maskData, out string? error)
-    {
-        maskX = null;
-        maskY = null;
-        maskData = null;
-        error = null;
-
-        int dataIndex = body.IndexOf("data=", StringComparison.Ordinal);
-        if (dataIndex < 0)
-        {
-            error = $"missing 'data=' in '{Truncate(body, 120)}'";
-            return false;
-        }
-
-        // Mask data is opaque and may itself contain ';' or '=' — take the remainder verbatim.
-        maskData = body[(dataIndex + "data=".Length)..];
-        if (string.IsNullOrEmpty(maskData))
-        {
-            error = "empty mask data";
-            return false;
-        }
-
-        Dictionary<string, string> fields = ParseFields(body[..dataIndex]);
-        if (fields.TryGetValue("x", out string? xRaw))
-        {
-            if (!int.TryParse(xRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int x))
-            {
-                error = $"non-integer mask 'x' in '{Truncate(body, 120)}'";
-                return false;
-            }
-
-            maskX = x;
-        }
-
-        if (fields.TryGetValue("y", out string? yRaw))
-        {
-            if (!int.TryParse(yRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int y))
-            {
-                error = $"non-integer mask 'y' in '{Truncate(body, 120)}'";
-                return false;
-            }
-
-            maskY = y;
-        }
-
-        return true;
-    }
-
-    private static Dictionary<string, string> ParseFields(string body)
-    {
-        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (string part in body.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            int eq = part.IndexOf('=');
-            if (eq > 0)
-            {
-                fields[part[..eq].Trim()] = part[(eq + 1)..].Trim();
-            }
-        }
-
-        return fields;
-    }
-
-    private static string Truncate(string s, int n) => s.Length <= n ? s : s[..(n - 3)] + "...";
 }
