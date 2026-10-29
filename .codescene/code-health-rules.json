@@ -1,1 +1,18 @@
-{}
+{
+  "rule_sets": [
+    {
+      "matching_content_path": "src/Trackdub.Director.Server/wwwroot/assets/.*",
+      "rules": [
+        { "name": "Complex Method", "weight": 0.0 },
+        { "name": "Complex Conditional", "weight": 0.0 },
+        { "name": "Bumpy Road Ahead", "weight": 0.0 },
+        { "name": "Excess Number of Function Arguments", "weight": 0.0 },
+        { "name": "Deep, Nested Complexity", "weight": 0.0 },
+        { "name": "Large Method", "weight": 0.0 },
+        { "name": "Overall Code Complexity", "weight": 0.0 },
+        { "name": "Primitive Obsession", "weight": 0.0 },
+        { "name": "String Heavy Function Arguments", "weight": 0.0 }
+      ]
+    }
+  ]
+}
