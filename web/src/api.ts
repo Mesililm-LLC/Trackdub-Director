@@ -6,6 +6,10 @@ export type SegmentInput = {
   concepts?: string[] | null;
   speaker_id?: string | null;
   speaker_label?: string | null;
+  frame_id?: string | null;
+  timecode_seconds?: number | null;
+  frame_sha256?: string | null;
+  vision_enrichment?: boolean | null;
 };
 
 export type StatusResponse = {
@@ -127,6 +131,24 @@ export type DirectorContext = {
   on_screen_text?: string[];
   scene_summary?: string;
   regions?: SceneRegion[];
+  speaker_description?: string;
+  burned_in_text?: string[];
+};
+
+export type VisionProvenance = {
+  requested_model_id: string;
+  model_id: string;
+  endpoint_host: string;
+  timestamp_utc: string;
+  prompt_template_version: string;
+};
+
+export type VisionUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  reasoning_tokens?: number;
+  cached_tokens?: number;
 };
 
 export type SceneSegmentResult = {
@@ -138,12 +160,19 @@ export type SceneSegmentResult = {
   usage: TranslationUsage;
   images_processed: number;
   raw_content?: string;
+  frame_id?: string;
+  timecode_seconds?: number;
+  frame_sha256?: string;
+  vision_provenance?: VisionProvenance;
+  vision_usage?: VisionUsage;
+  vision_raw_content?: string;
 };
 
 export type SceneContextBatch = {
   segments: SceneSegmentResult[];
   usage_total: TranslationUsage;
   images_processed_total: number;
+  vision_usage_total?: VisionUsage;
 };
 
 export async function postSceneContext(segments: SegmentInput[]): Promise<SceneContextBatch> {
@@ -154,6 +183,10 @@ export async function postSceneContext(segments: SegmentInput[]): Promise<SceneC
     concepts: s.concepts ?? null,
     speaker_id: s.speaker_id ?? null,
     speaker_label: s.speaker_label ?? null,
+    frame_id: s.frame_id ?? null,
+    timecode_seconds: s.timecode_seconds ?? null,
+    frame_sha256: s.frame_sha256 ?? null,
+    vision_enrichment: s.vision_enrichment ?? null,
   }));
   const r = await fetch("/api/scene-context", {
     method: "POST",

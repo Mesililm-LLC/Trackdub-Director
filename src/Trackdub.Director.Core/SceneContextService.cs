@@ -1,19 +1,29 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace Trackdub.Director.Core;
 
 /// <summary>
-/// Scene-context lane (Director Mode Stage A). For each segment, segments the
-/// caller-supplied concept phrases in the segment's frame via
-/// <see cref="MetaClient.SegmentConceptAsync"/> and returns a
-/// <see cref="DirectorContext"/> whose only evidence-backed content is the
-/// parsed regions. Fields sam-3.1 cannot evidence stay null.
+/// Scene-context lane (Director Mode Stages A + B1). For each segment, segments
+/// the caller-supplied concept phrases in the segment's frame via
+/// <see cref="MetaClient.SegmentConceptAsync"/>. When the caller opts in with
+/// VisionEnrichment, a vision pass over the full frame via
+/// <see cref="MetaClient.DescribeFrameAsync"/> (template scene-vision-v1) fills
+/// the enrichment fields of the same <see cref="DirectorContext"/>; SAM regions
+/// found first ride along as text context. Neither lane overwrites the other's
+/// fields and fields no lane can evidence stay null.
 /// </summary>
 public sealed class SceneContextService
 {
     /// <summary>Template "scene-v1": the concept phrase is sent verbatim as input_text.</summary>
     public const string PromptTemplateVersion = "scene-v1";
+
+    /// <summary>Template "scene-vision-v1": the Stage B1 vision ask, ported verbatim from the probe that verified it. Do not reword without a new probe.</summary>
+    public const string VisionPromptTemplateVersion = "scene-vision-v1";
+
+    /// <summary>Verbatim scene-vision-v1 prompt text (single text part, sent exactly as written).</summary>
+    public const string VisionPromptText = "Look at this video frame. Return strict JSON only, with no markdown fences and no commentary, using exactly these keys: scene_summary (one sentence describing the scene), emotion_tone_label (short label for the visible speaker's emotion or tone, or null if no speaker is visible), speaker_description (short phrase describing the visible speaker, or null if no speaker is visible), on_screen_text (array of exact text strings physically present in the scene only, such as signs and posters; do not include burned-in subtitles or captions, and do not include watermarks or logos), burned_in_text (array of exact text strings overlaid on the video only, namely burned-in subtitles or captions and watermarks or logos; do not include text physically present in the scene). Use an empty array when no text of that kind is visible. Transcribe text exactly as shown. Do not guess.";
 
     private readonly MetaClient _client;
 
@@ -38,7 +48,7 @@ public sealed class SceneContextService
             throw new ArgumentException("At least one segment is required.", nameof(segments));
         }
 
-        var run = new SceneRunContext(GetEndpointHost(), MetaAuth.GetSceneModel());
+        var run = new SceneRunContext(GetEndpointHost(), MetaAuth.GetSceneModel(), MetaAuth.GetVisionModel());
         var results = new List<SceneSegmentResult>(segments.Count);
 
         foreach (SceneSegmentInput segment in segments)
@@ -55,6 +65,14 @@ public sealed class SceneContextService
         int completion = 0;
         int tokens = 0;
         int images = 0;
+        int visionPrompt = 0;
+        int visionCompletion = 0;
+        int visionTokens = 0;
+        int visionReasoning = 0;
+        int visionCached = 0;
+        bool anyVision = false;
+        bool anyReasoning = false;
+        bool anyCached = false;
 
         foreach (SceneSegmentResult result in results)
         {
@@ -62,9 +80,30 @@ public sealed class SceneContextService
             completion += result.Usage.CompletionTokens;
             tokens += result.Usage.TotalTokens;
             images += result.ImagesProcessed;
+            if (result.VisionUsage is not null)
+            {
+                anyVision = true;
+                visionPrompt += result.VisionUsage.PromptTokens;
+                visionCompletion += result.VisionUsage.CompletionTokens;
+                visionTokens += result.VisionUsage.TotalTokens;
+                if (result.VisionUsage.ReasoningTokens.HasValue)
+                {
+                    anyReasoning = true;
+                    visionReasoning += result.VisionUsage.ReasoningTokens.Value;
+                }
+
+                if (result.VisionUsage.CachedTokens.HasValue)
+                {
+                    anyCached = true;
+                    visionCached += result.VisionUsage.CachedTokens.Value;
+                }
+            }
         }
 
-        return new SceneContextBatch(results.ToArray(), new TranslationUsageSummary(prompt, completion, tokens), images);
+        VisionUsage? visionTotal = anyVision
+            ? new VisionUsage(visionPrompt, visionCompletion, visionTokens, anyReasoning ? visionReasoning : null, anyCached ? visionCached : null)
+            : null;
+        return new SceneContextBatch(results.ToArray(), new TranslationUsageSummary(prompt, completion, tokens), images, visionTotal);
     }
 
     private async Task<SceneSegmentResult> ProcessSegmentAsync(
@@ -79,33 +118,146 @@ public sealed class SceneContextService
             run,
             NullIfBlank(segment.SpeakerId),
             NullIfBlank(segment.SpeakerLabel),
-            NormalizeConcepts(segment.Concepts));
+            NormalizeConcepts(segment.Concepts),
+            NullIfBlank(segment.FrameId),
+            segment.TimecodeSeconds,
+            NullIfBlank(segment.FrameSha256),
+            segment.VisionEnrichment == true);
 
-        if (string.IsNullOrWhiteSpace(segment.FrameImageDataUrl) || work.Concepts.Length == 0)
+        var accumulator = new SegmentationAccumulator(work.Run.ModelId);
+
+        // Frame provenance is verified locally before any live call: a hash
+        // mismatch fails the segment with zero model spend.
+        string? frameError = ValidateFrameHash(work, accumulator);
+        if (frameError is not null)
         {
-            // Nothing to query: honest Empty with Regions null (unknown, not "none found").
-            return EmptyResult(work);
+            return accumulator.Failure(work, frameError);
         }
 
-        return await SegmentConceptsAsync(work, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(segment.FrameImageDataUrl))
+        {
+            return accumulator.Empty(work);
+        }
+
+        SceneSegmentResult? segmentFailure = await AccumulateConceptsAsync(accumulator, work, cancellationToken).ConfigureAwait(false);
+        if (segmentFailure is not null)
+        {
+            return segmentFailure;
+        }
+
+        if (work.VisionRequested)
+        {
+            SceneSegmentResult? visionFailure = await AccumulateVisionAsync(accumulator, work, cancellationToken).ConfigureAwait(false);
+            if (visionFailure is not null)
+            {
+                return visionFailure;
+            }
+        }
+        else if (work.Concepts.Length == 0)
+        {
+            // Frame but nothing to query: honest Empty with Regions null (unknown, not "none found").
+            return accumulator.Empty(work);
+        }
+
+        return accumulator.Completed(work);
     }
 
-    private static SceneSegmentResult EmptyResult(SegmentWork work)
+    // Computes the frame hash locally and verifies it against the caller's
+    // expected value. Returns an error string on any failure; the caller turns
+    // it into a Failed result before any live call is made.
+    private static string? ValidateFrameHash(SegmentWork work, SegmentationAccumulator accumulator)
     {
-        return new SceneSegmentResult(
-            work.Segment.Id,
-            SceneContextStatus.Empty,
-            new DirectorContext(work.SpeakerId, work.SpeakerLabel, null, null, null, Regions: null),
-            Error: null,
-            Provenance(work.Run, work.Run.ModelId),
-            new TranslationUsage(0, 0, 0),
-            ImagesProcessed: 0,
-            RawContent: null);
+        string? frame = work.Segment.FrameImageDataUrl;
+        if (!string.IsNullOrWhiteSpace(frame))
+        {
+            string? error = TryComputeFrameSha256(frame.Trim(), out string? computed);
+            if (error is not null)
+            {
+                return error;
+            }
+
+            accumulator.ComputedFrameSha256 = computed;
+        }
+
+        if (work.ExpectedFrameSha256 is null)
+        {
+            return null;
+        }
+
+        string expected = work.ExpectedFrameSha256.ToLowerInvariant();
+        if (accumulator.ComputedFrameSha256 is null)
+        {
+            return "Frame SHA-256 could not be verified: an expected frame_sha256 was supplied but the frame bytes are not available as a base64 data URL.";
+        }
+
+        return string.Equals(accumulator.ComputedFrameSha256, expected, StringComparison.Ordinal)
+            ? null
+            : $"Frame SHA-256 mismatch: expected {expected}, computed {accumulator.ComputedFrameSha256}.";
     }
 
-    private async Task<SceneSegmentResult> SegmentConceptsAsync(SegmentWork work, CancellationToken cancellationToken)
+    // Hashes the decoded bytes of a base64 data URL. https:// frames are not
+    // fetched (the service never stores or downloads the image), so their hash
+    // stays null; non-base64 data URLs likewise have no locally hashable bytes.
+    private static string? TryComputeFrameSha256(string frameImageDataUrl, out string? computed)
     {
-        var accumulator = new SegmentationAccumulator(work.Run.ModelId);
+        computed = null;
+        int marker = frameImageDataUrl.IndexOf(";base64,", StringComparison.OrdinalIgnoreCase);
+        if (marker < 0)
+        {
+            return null;
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(frameImageDataUrl[(marker + ";base64,".Length)..]);
+        }
+        catch (FormatException)
+        {
+            return "Frame data URL contains invalid base64; its SHA-256 could not be computed.";
+        }
+
+        computed = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return null;
+    }
+
+    private async Task<SceneSegmentResult?> AccumulateVisionAsync(
+        SegmentationAccumulator accumulator,
+        SegmentWork work,
+        CancellationToken cancellationToken)
+    {
+        accumulator.BeginVision(work);
+
+        MetaClient.VisionCompletionResult response;
+        try
+        {
+            response = await _client.DescribeFrameAsync(
+                new MetaClient.VisionRequest(work.Segment.FrameImageDataUrl!, VisionPromptText, accumulator.RegionsContextText()),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (MetaApiException ex) when (!IsMissingKey(ex))
+        {
+            return accumulator.Failure(work, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return accumulator.Failure(work, ex.Message);
+        }
+
+        accumulator.AddVision(response);
+        VisionParseResult parsed = SceneVisionParser.Parse(response.Content);
+        if (parsed.IsMalformed)
+        {
+            return accumulator.Failure(work, parsed.Error ?? "Malformed vision response.");
+        }
+
+        accumulator.SetEnrichment(parsed.Enrichment!);
+        return null;
+    }
+
+    private async Task<SceneSegmentResult?> AccumulateConceptsAsync(SegmentationAccumulator accumulator, SegmentWork work, CancellationToken cancellationToken)
+    {
+        
 
         foreach (string concept in work.Concepts)
         {
@@ -116,7 +268,7 @@ public sealed class SceneContextService
             }
         }
 
-        return accumulator.Parsed(work);
+        return null;
     }
 
     private async Task<SceneSegmentResult?> AccumulateConceptAsync(
@@ -186,14 +338,18 @@ public sealed class SceneContextService
         return new TranslationProvenance(modelId, run.EndpointHost, DateTime.UtcNow.ToString("O"), PromptTemplateVersion);
     }
 
-    private sealed record SceneRunContext(string EndpointHost, string ModelId);
+    private sealed record SceneRunContext(string EndpointHost, string ModelId, string VisionModelId);
 
     private sealed record SegmentWork(
         SceneSegmentInput Segment,
         SceneRunContext Run,
         string? SpeakerId,
         string? SpeakerLabel,
-        string[] Concepts);
+        string[] Concepts,
+        string? FrameId,
+        double? TimecodeSeconds,
+        string? ExpectedFrameSha256,
+        bool VisionRequested);
 
     private sealed class SegmentationAccumulator
     {
@@ -204,6 +360,16 @@ public sealed class SceneContextService
         private int _completionTokens;
         private int _totalTokens;
         private int _imagesProcessed;
+        private bool _visionAttempted;
+        private bool _visionSucceeded;
+        private string _visionRequestedModel = string.Empty;
+        private string _visionReturnedModel = string.Empty;
+        private string _visionTimestampUtc = string.Empty;
+        private VisionUsage? _visionUsage;
+        private string? _visionRawContent;
+        private VisionEnrichment? _enrichment;
+
+        public string? ComputedFrameSha256 { get; set; }
 
         public SegmentationAccumulator(string modelId)
         {
@@ -238,28 +404,108 @@ public sealed class SceneContextService
                 Provenance(work.Run, _modelId),
                 Usage(),
                 _imagesProcessed,
-                RawOrNull());
+                RawOrNull(),
+                work.FrameId,
+                work.TimecodeSeconds,
+                ComputedFrameSha256,
+                VisionProvenanceOrNull(work),
+                _visionUsage,
+                _visionRawContent);
         }
 
-        public SceneSegmentResult Parsed(SegmentWork work)
+        public SceneSegmentResult Completed(SegmentWork work)
         {
             var context = new DirectorContext(
                 work.SpeakerId,
                 work.SpeakerLabel,
-                EmotionToneLabel: null,
-                OnScreenText: null,
-                SceneSummary: null,
-                Regions: _regions.ToArray());
+                EmotionToneLabel: _enrichment?.EmotionToneLabel,
+                OnScreenText: _enrichment?.OnScreenText,
+                SceneSummary: _enrichment?.SceneSummary,
+                Regions: work.Concepts.Length > 0 ? _regions.ToArray() : null,
+                SpeakerDescription: _enrichment?.SpeakerDescription,
+                BurnedInText: _enrichment?.BurnedInText);
 
             return new SceneSegmentResult(
                 work.Segment.Id,
-                _regions.Count > 0 ? SceneContextStatus.Parsed : SceneContextStatus.Empty,
+                _regions.Count > 0 || _visionSucceeded ? SceneContextStatus.Parsed : SceneContextStatus.Empty,
                 context,
                 Error: null,
                 Provenance(work.Run, _modelId),
                 Usage(),
                 _imagesProcessed,
-                string.Join("\n", _rawParts));
+                RawOrNull(),
+                work.FrameId,
+                work.TimecodeSeconds,
+                ComputedFrameSha256,
+                VisionProvenanceOrNull(work),
+                _visionUsage,
+                _visionRawContent);
+        }
+
+        public SceneSegmentResult Empty(SegmentWork work)
+        {
+            return new SceneSegmentResult(
+                work.Segment.Id,
+                SceneContextStatus.Empty,
+                new DirectorContext(work.SpeakerId, work.SpeakerLabel, null, null, null, Regions: null),
+                Error: null,
+                Provenance(work.Run, work.Run.ModelId),
+                new TranslationUsage(0, 0, 0),
+                ImagesProcessed: 0,
+                RawContent: null,
+                work.FrameId,
+                work.TimecodeSeconds,
+                ComputedFrameSha256);
+        }
+
+        public void BeginVision(SegmentWork work)
+        {
+            _visionAttempted = true;
+            _visionRequestedModel = work.Run.VisionModelId;
+            _visionReturnedModel = work.Run.VisionModelId;
+            _visionTimestampUtc = DateTime.UtcNow.ToString("O");
+        }
+
+        public void AddVision(MetaClient.VisionCompletionResult response)
+        {
+            _visionRequestedModel = response.RequestedModel;
+            _visionReturnedModel = response.Model;
+            _visionRawContent = response.Content;
+            _visionUsage = response.Usage is null
+                ? null
+                : new VisionUsage(
+                    response.Usage.PromptTokens,
+                    response.Usage.CompletionTokens,
+                    response.Usage.TotalTokens,
+                    response.Usage.ReasoningTokens,
+                    response.Usage.CachedTokens);
+        }
+
+        public void SetEnrichment(VisionEnrichment enrichment)
+        {
+            _enrichment = enrichment;
+            _visionSucceeded = true;
+        }
+
+        // SAM regions ride along as plain text context only; mask payloads are
+        // never sent to the vision model and regions never alter the template.
+        public string? RegionsContextText()
+        {
+            if (_regions.Count == 0)
+            {
+                return null;
+            }
+
+            string joined = string.Join("; ", _regions.Select(r => FormattableString.Invariant(
+                $"{r.Concept} box ({r.X1},{r.Y1})-({r.X2},{r.Y2}) in {r.FrameWidth}x{r.FrameHeight}")));
+            return $"Segmentation regions already found in this frame: {joined}.";
+        }
+
+        private VisionProvenance? VisionProvenanceOrNull(SegmentWork work)
+        {
+            return _visionAttempted
+                ? new VisionProvenance(_visionRequestedModel, _visionReturnedModel, work.Run.EndpointHost, _visionTimestampUtc, VisionPromptTemplateVersion)
+                : null;
         }
 
         private TranslationUsage Usage()

@@ -253,7 +253,7 @@ app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextServic
 
     if (segments is null || segments.Length == 0)
     {
-        return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, frame_image_data_url?, concepts?, speaker_id?, speaker_label? }." });
+        return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, frame_image_data_url?, concepts?, speaker_id?, speaker_label?, frame_id?, timecode_seconds?, frame_sha256?, vision_enrichment? }." });
     }
 
     if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))

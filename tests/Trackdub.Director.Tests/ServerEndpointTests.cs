@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -23,6 +24,56 @@ public sealed class ServerEndpointTests
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
+    }
+
+    // Verbatim raw body of the live muse-spark-1.1 scene-vision-v1 probe fixture.
+    private const string ProbeVisionResponseBody = """{"id":"chatcmpl-01a186b2-eade-74aa-a0f6-6bd0b8d71421","choices":[{"finish_reason":"stop","index":0,"message":{"content":"{\"scene_summary\": \"A woman stands outside a coffee shop entrance talking on her cell phone while smiling.\", \"emotion_tone_label\": \"cheerful\", \"speaker_description\": \"a smiling woman in a knit beanie and black winter coat talking on a phone\", \"on_screen_text\": [\"COFFEE SHOP\", \"STORE HOURS\", \"MONDAY - FRIDAY\", \"6:30AM - 8:00PM\", \"SATURDAY & SUNDAY\", \"8:00AM - 8:00PM\"], \"burned_in_text\": [\"VOA Learning English\", \"Okay. My apartment is across from a big department store.\"]}","refusal":null,"role":"assistant"},"logprobs":null}],"created":1793261234,"model":"muse-spark-1.1","object":"chat.completion","usage":{"completion_tokens":756,"prompt_tokens":2878,"total_tokens":3634,"completion_tokens_details":{"reasoning_tokens":611},"prompt_tokens_details":{"cached_tokens":0}}}""";
+
+    private static string FrameSha256Hex()
+    {
+        byte[] bytes = Convert.FromBase64String("iVBORw0KGgo=");
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    private static void AssertSceneVisionContext(JsonElement context)
+    {
+        Assert.Equal("A woman stands outside a coffee shop entrance talking on her cell phone while smiling.", context.GetProperty("scene_summary").GetString());
+        Assert.Equal("cheerful", context.GetProperty("emotion_tone_label").GetString());
+        Assert.Equal("a smiling woman in a knit beanie and black winter coat talking on a phone", context.GetProperty("speaker_description").GetString());
+    }
+
+    private static void AssertSceneVisionTextSplit(JsonElement context)
+    {
+        string[] onScreen = context.GetProperty("on_screen_text").EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Contains("COFFEE SHOP", onScreen);
+        Assert.DoesNotContain("Okay. My apartment is across from a big department store.", onScreen);
+        Assert.DoesNotContain("VOA Learning English", onScreen);
+        string[] burned = context.GetProperty("burned_in_text").EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Equal(["VOA Learning English", "Okay. My apartment is across from a big department store."], burned);
+    }
+
+    private static void AssertSceneVisionMeta(JsonElement seg)
+    {
+        JsonElement visionProvenance = seg.GetProperty("vision_provenance");
+        Assert.Equal("muse-spark-1.1", visionProvenance.GetProperty("requested_model_id").GetString());
+        Assert.Equal("muse-spark-1.1", visionProvenance.GetProperty("model_id").GetString());
+        Assert.Equal("scene-vision-v1", visionProvenance.GetProperty("prompt_template_version").GetString());
+        JsonElement visionUsage = seg.GetProperty("vision_usage");
+        Assert.Equal(3634, visionUsage.GetProperty("total_tokens").GetInt32());
+        Assert.Equal(611, visionUsage.GetProperty("reasoning_tokens").GetInt32());
+    }
+
+    private static void AssertSceneFrameProvenance(JsonElement seg)
+    {
+        Assert.Equal("hero-0242", seg.GetProperty("frame_id").GetString());
+        Assert.Equal(162.0, seg.GetProperty("timecode_seconds").GetDouble());
+        Assert.Equal(FrameSha256Hex(), seg.GetProperty("frame_sha256").GetString());
+    }
+
+    private static void AssertSceneVisionTotals(JsonElement root)
+    {
+        Assert.Equal(3634, root.GetProperty("vision_usage_total").GetProperty("total_tokens").GetInt32());
+        Assert.Equal(611, root.GetProperty("vision_usage_total").GetProperty("reasoning_tokens").GetInt32());
     }
 
     private static HttpResponseMessage ChatOk(string modelId, string content, int promptTokens = 10, int completionTokens = 5)
@@ -580,6 +631,65 @@ public sealed class ServerEndpointTests
         JsonElement provenance = seg.GetProperty("provenance");
         AssertSceneProvenance(provenance);
         AssertSceneCounts(root, seg);
+    }
+
+    private static HttpMessageHandler VisionSceneHandler()
+    {
+        return new DelegatingHandlerStub((request, _) =>
+        {
+            string? path = request.RequestUri?.AbsolutePath;
+            Assert.True(path is not null && path.EndsWith("/chat/completions", StringComparison.Ordinal), $"Expected /chat/completions, got {path}");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(ProbeVisionResponseBody, Encoding.UTF8, "application/json"),
+            });
+        });
+    }
+
+    [Fact]
+    public async Task SceneContext_vision_enrichment_returns_split_fields_and_frame_provenance()
+    {
+        using var auth = FakeAuth();
+        using var visionModel = EnvShim("META_VISION_MODEL", "muse-spark-1.1");
+        using var factory = new ServerFactory(VisionSceneHandler());
+        using HttpClient client = factory.CreateClient();
+
+        var body = new
+        {
+            segments = new[]
+            {
+                new
+                {
+                    id = "seg-001",
+                    text = "Okay. My apartment is across from a big department store.",
+                    frame_image_data_url = "data:image/png;base64,iVBORw0KGgo=",
+                    speaker_id = "ashley",
+                    frame_id = "hero-0242",
+                    timecode_seconds = (double?)162.0,
+                    frame_sha256 = FrameSha256Hex(),
+                    vision_enrichment = (bool?)true,
+                },
+            },
+        };
+
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/scene-context", body);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        string json = await resp.Content.ReadAsStringAsync();
+        using JsonDocument doc = JsonDocument.Parse(json);
+        JsonElement root = doc.RootElement;
+
+        AssertSceneRoot(root, out JsonElement seg);
+        Assert.Equal("Parsed", seg.GetProperty("status").GetString());
+        JsonElement context = seg.GetProperty("context");
+        Assert.Equal("ashley", context.GetProperty("speaker_id").GetString());
+        AssertSceneVisionContext(context);
+        AssertSceneVisionTextSplit(context);
+        AssertSceneVisionMeta(seg);
+        AssertSceneFrameProvenance(seg);
+        AssertSceneVisionTotals(root);
+        // The frame image itself is never stored or echoed back.
+        Assert.DoesNotContain("iVBORw0KGgo", json, StringComparison.Ordinal);
     }
 
     [Fact]

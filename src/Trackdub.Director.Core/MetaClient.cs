@@ -103,6 +103,18 @@ public sealed class MetaClient : IDisposable
         return usage is null ? null : new TokenUsage(usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens);
     }
 
+    private static TokenUsageDetail? ToUsageDetail(UsageDto? usage)
+    {
+        return usage is null
+            ? null
+            : new TokenUsageDetail(
+                usage.PromptTokens,
+                usage.CompletionTokens,
+                usage.TotalTokens,
+                usage.CompletionTokensDetails?.ReasoningTokens,
+                usage.PromptTokensDetails?.CachedTokens);
+    }
+
     /// <summary>
     /// Translate one line from English to Spanish via the Meta Model API.
     /// </summary>
@@ -284,6 +296,44 @@ public sealed class MetaClient : IDisposable
             JsonSerializer.Serialize(payload, JsonOptions));
         string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         return SegmentationResponseParser.Parse(new SegmentationBody(new BodyText(body), new ModelId(resolvedModel)));
+    }
+
+    /// <summary>
+    /// Describe one frame via POST /v1/chat/completions (Stage B1 vision enrichment,
+    /// probe-verified with template scene-vision-v1). One user message: the prompt
+    /// text part first, an optional segmentation-regions text part, then the
+    /// OpenAI-style image_url part carrying the full frame. The vision lane always
+    /// sends reasoning_effort "low", matching the probe that verified this shape.
+    /// Returns the raw assistant content unparsed; callers own JSON validation and
+    /// must fail closed on malformed output.
+    /// </summary>
+    public async Task<VisionCompletionResult> DescribeFrameAsync(VisionRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        string imageUrl = ValidateImageUrl(request.FrameImageDataUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.PromptText);
+
+        string resolvedModel = string.IsNullOrWhiteSpace(request.Model) ? MetaAuth.GetVisionModel() : request.Model.Trim();
+        var parts = new List<VisionContentPart>
+        {
+            new("text", request.PromptText, null),
+        };
+        if (!string.IsNullOrWhiteSpace(request.RegionsContextText))
+        {
+            parts.Add(new VisionContentPart("text", request.RegionsContextText.Trim(), null));
+        }
+
+        parts.Add(new VisionContentPart("image_url", null, new VisionImageUrl(imageUrl)));
+        var payload = new VisionChatRequest(resolvedModel, [new VisionChatMessage("user", parts.ToArray())], "low");
+
+        using HttpRequestMessage httpRequest = CreateAuthorizedRequest(
+            HttpMethod.Post,
+            $"{MetaAuth.GetBaseUrl().TrimEnd('/')}/chat/completions",
+            JsonSerializer.Serialize(payload, JsonOptions));
+        string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        ChatCompletionResponse? parsed = ParseChatResponse(new BodyText(body));
+        string content = ExtractContent(parsed, new BodyText(body));
+        return new VisionCompletionResult(content, resolvedModel, parsed?.Model ?? resolvedModel, ToUsageDetail(parsed?.Usage));
     }
 
     private static string ValidateImageUrl(string frameImageDataUrl)
@@ -566,7 +616,15 @@ public sealed class MetaClient : IDisposable
     private sealed record UsageDto(
         [property: JsonPropertyName("prompt_tokens")] int PromptTokens,
         [property: JsonPropertyName("completion_tokens")] int CompletionTokens,
-        [property: JsonPropertyName("total_tokens")] int TotalTokens);
+        [property: JsonPropertyName("total_tokens")] int TotalTokens,
+        [property: JsonPropertyName("completion_tokens_details")] CompletionTokensDetailsDto? CompletionTokensDetails = null,
+        [property: JsonPropertyName("prompt_tokens_details")] PromptTokensDetailsDto? PromptTokensDetails = null);
+
+    private sealed record CompletionTokensDetailsDto(
+        [property: JsonPropertyName("reasoning_tokens")] int? ReasoningTokens = null);
+
+    private sealed record PromptTokensDetailsDto(
+        [property: JsonPropertyName("cached_tokens")] int? CachedTokens = null);
 
     private sealed record ChatChoice(
         [property: JsonPropertyName("message")] ChatMessage? Message,
@@ -587,6 +645,14 @@ public sealed class MetaClient : IDisposable
         string Content,
         string Model,
         TokenUsage? Usage);
+
+    /// <summary>Token usage with API detail fields; detail values stay null when the API omits them.</summary>
+    public sealed record TokenUsageDetail(
+        int PromptTokens,
+        int CompletionTokens,
+        int TotalTokens,
+        int? ReasoningTokens,
+        int? CachedTokens);
 
     public sealed record TokenUsage(
         int PromptTokens,
@@ -644,8 +710,38 @@ public sealed class MetaClient : IDisposable
         string SourceLanguage,
         string TargetLanguage);
 
+    private sealed record VisionChatRequest(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("messages")] VisionChatMessage[] Messages,
+        [property: JsonPropertyName("reasoning_effort")] string? ReasoningEffort = null);
+
+    private sealed record VisionChatMessage(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("content")] VisionContentPart[] Content);
+
+    private sealed record VisionContentPart(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("text")] string? Text,
+        [property: JsonPropertyName("image_url")] VisionImageUrl? ImageUrl);
+
+    private sealed record VisionImageUrl(
+        [property: JsonPropertyName("url")] string Url);
+
+    /// <summary>Raw vision outcome. Content is the unparsed assistant message; Model is the API-reported model.</summary>
+    public sealed record VisionCompletionResult(
+        string Content,
+        string RequestedModel,
+        string Model,
+        TokenUsageDetail? Usage);
+
     public sealed record SegmentationRequest(
         string FrameImageDataUrl,
         string Concept,
+        string? Model = null);
+
+    public sealed record VisionRequest(
+        string FrameImageDataUrl,
+        string PromptText,
+        string? RegionsContextText = null,
         string? Model = null);
 }
