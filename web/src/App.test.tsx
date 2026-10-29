@@ -309,11 +309,21 @@ describe("App smoke", () => {
           status: "Parsed",
           context: {
             speaker_id: "spk-1",
+            emotion_tone_label: "cheerful",
+            on_screen_text: ["COFFEE SHOP", "STORE HOURS"],
+            scene_summary: "A woman stands outside a coffee shop entrance talking on her cell phone while smiling.",
             regions: [{ concept: "red rectangle", x1: 10, y1: 10, x2: 29, y2: 49, frame_width: 64, frame_height: 64, mask_x: 0, mask_y: 0, mask_data: "40,20,abc" }],
+            speaker_description: "a smiling woman in a knit beanie and black winter coat talking on a phone",
+            burned_in_text: ["VOA Learning English", "Okay. My apartment is across from a big department store."],
           },
           provenance: { model_id: "sam-3.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "scene-v1" },
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
           images_processed: 1,
+          frame_id: "hero-0242",
+          timecode_seconds: 162,
+          frame_sha256: "6c348068c34585f6f8666cff4fa7b03362732e082d72f76adff8023b77523e75",
+          vision_provenance: { requested_model_id: "muse-spark-1.1", model_id: "muse-spark-1.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "scene-vision-v1" },
+          vision_usage: { prompt_tokens: 2878, completion_tokens: 756, total_tokens: 3634, reasoning_tokens: 611, cached_tokens: 0 },
         },
         {
           id: "seg-002",
@@ -326,6 +336,7 @@ describe("App smoke", () => {
       ],
       usage_total: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       images_processed_total: 1,
+      vision_usage_total: { prompt_tokens: 2878, completion_tokens: 756, total_tokens: 3634, reasoning_tokens: 611, cached_tokens: 0 },
     };
     vi.stubGlobal(
       "fetch",
@@ -343,11 +354,21 @@ describe("App smoke", () => {
     const seg1 = getCard("seg-001");
     expect(within(seg1).getByText(/Region: red rectangle \(10,10\)-\(29,49\) in 64x64/)).toBeInTheDocument();
     expect(within(seg1).getByText(/Speaker: spk-1/)).toBeInTheDocument();
-    // Un-evidenced fields render as unknown, never as invented values.
-    expect(within(seg1).getByText(/Scene summary: —/)).toBeInTheDocument();
+    // Enriched (B1) fields render read-only, burned-in text distinct from in-scene text.
+    expect(within(seg1).getByText(/Emotion\/tone: cheerful/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Speaker description: a smiling woman in a knit beanie/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/On-screen text: COFFEE SHOP \| STORE HOURS/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Burned-in text: VOA Learning English/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Vision gate: requested muse-spark-1\.1 · returned muse-spark-1\.1 · template scene-vision-v1/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/tokens 3634 \(reasoning 611\)/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Frame: hero-0242 · 162s · sha256 6c348068c345…/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Scene summary: A woman stands outside a coffee shop entrance/)).toBeInTheDocument();
     expect(within(seg1).getByText(/Scene gate: model sam-3\.1 · template scene-v1/)).toBeInTheDocument();
 
     const seg2 = getCard("seg-002");
     expect(within(seg2).getByText("Scene: Empty")).toBeInTheDocument();
+    // Un-evidenced fields still render as unknown, never as invented values.
+    expect(within(seg2).getByText(/Scene summary: —/)).toBeInTheDocument();
+    expect(within(seg2).getByText(/Burned-in text: —/)).toBeInTheDocument();
   });
 });

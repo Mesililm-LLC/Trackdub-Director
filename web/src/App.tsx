@@ -286,8 +286,12 @@ function SceneHeader({ context }: { context: DirectorContext | undefined }) {
       <div className="token-usage">
         Speaker: {context?.speaker_label ?? context?.speaker_id ?? "—"} · Emotion/tone: {context?.emotion_tone_label ?? "—"}
       </div>
+      <div className="token-usage">Speaker description: {context?.speaker_description ?? "—"}</div>
       <div className="token-usage">
         On-screen text: {context?.on_screen_text?.length ? context.on_screen_text.join(" | ") : "—"}
+      </div>
+      <div className="token-usage">
+        Burned-in text: {context?.burned_in_text?.length ? context.burned_in_text.join(" | ") : "—"}
       </div>
       <div className="token-usage">Scene summary: {context?.scene_summary ?? "—"}</div>
     </>
@@ -322,6 +326,32 @@ function SceneDetails({ scene }: { scene: SceneSegmentResult }) {
   );
 }
 
+function SceneVisionFooter({ scene }: { scene: SceneSegmentResult }) {
+  const provenance = scene.vision_provenance;
+  const hasFrame = Boolean(scene.frame_id || scene.timecode_seconds != null || scene.frame_sha256);
+  if (!provenance && !hasFrame) {
+    return null;
+  }
+
+  return (
+    <>
+      {provenance && (
+        <div className="token-usage">
+          Vision gate: requested {provenance.requested_model_id} · returned {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
+          {scene.vision_usage?.total_tokens ?? "—"}
+          {scene.vision_usage?.reasoning_tokens != null ? ` (reasoning ${scene.vision_usage.reasoning_tokens})` : ""}
+        </div>
+      )}
+      {hasFrame && (
+        <div className="token-usage" title={scene.frame_sha256 ?? ""}>
+          Frame: {scene.frame_id ?? "—"} · {scene.timecode_seconds != null ? `${scene.timecode_seconds}s` : "—"} · sha256{" "}
+          {scene.frame_sha256 ? `${scene.frame_sha256.slice(0, 12)}…` : "—"}
+        </div>
+      )}
+    </>
+  );
+}
+
 function ScenePanel({ seg, scene }: { seg: SegmentInput; scene: SceneSegmentResult }) {
   return (
     <div className="attempts-panel" aria-label={`Scene context for ${seg.id}`}>
@@ -336,6 +366,7 @@ function ScenePanel({ seg, scene }: { seg: SegmentInput; scene: SceneSegmentResu
         Scene gate: model {scene.provenance.model_id} · template {scene.provenance.prompt_template_version} · {scene.provenance.timestamp_utc} · tokens{" "}
         {scene.usage.total_tokens} · images {scene.images_processed}
       </div>
+      <SceneVisionFooter scene={scene} />
     </div>
   );
 }
