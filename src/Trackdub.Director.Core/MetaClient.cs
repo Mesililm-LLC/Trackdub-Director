@@ -338,6 +338,36 @@ public sealed class MetaClient : IDisposable
         return new VisionCompletionResult(content, resolvedModel, parsed?.Model ?? resolvedModel, ToUsageDetail(parsed?.Usage));
     }
 
+    /// <summary>
+    /// Adapt one existing translation to a target register via POST /v1/chat/completions
+    /// (Director Mode Stage B2, template director-v1). System and user prompt text are
+    /// built by the caller (DirectorAdaptationService owns the template). This lane
+    /// always sends reasoning_effort "low" and the default chat model (muse-spark-1.1).
+    /// Returns the raw assistant content unparsed; callers own line validation and must
+    /// fail closed on malformed output. Blank content does not discard billed usage.
+    /// </summary>
+    public async Task<AdaptationCompletionResult> AdaptRegisterAsync(AdaptationRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SystemPrompt);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.UserPrompt);
+
+        string resolvedModel = string.IsNullOrWhiteSpace(request.Model) ? MetaAuth.GetModel() : request.Model.Trim();
+        var payload = new ChatCompletionRequest(
+            resolvedModel,
+            [new ChatMessage("system", request.SystemPrompt), new ChatMessage("user", request.UserPrompt)],
+            "low");
+
+        using HttpRequestMessage httpRequest = CreateAuthorizedRequest(
+            HttpMethod.Post,
+            $"{MetaAuth.GetBaseUrl().TrimEnd('/')}/chat/completions",
+            JsonSerializer.Serialize(payload, JsonOptions));
+        string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        ChatCompletionResponse? parsed = ParseChatResponse(new BodyText(body));
+        string content = parsed?.Choices?.FirstOrDefault()?.Message?.Content?.Trim() ?? string.Empty;
+        return new AdaptationCompletionResult(content, resolvedModel, parsed?.Model ?? resolvedModel, ToUsageDetail(parsed?.Usage));
+    }
+
     private static string ValidateImageUrl(string frameImageDataUrl)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(frameImageDataUrl);
@@ -410,7 +440,7 @@ public sealed class MetaClient : IDisposable
         return baseUrl;
     }
 
-    private static string LanguageDisplayName(string code)
+    internal static string LanguageDisplayName(string code)
     {
         string trimmed = code.Trim();
         return LanguageNames.TryGetValue(trimmed, out string? name) ? name : trimmed;
@@ -745,5 +775,17 @@ public sealed class MetaClient : IDisposable
         string FrameImageDataUrl,
         string PromptText,
         string? RegionsContextText = null,
+        string? Model = null);
+
+    /// <summary>Raw adaptation outcome. Content is the unparsed assistant message; Model is the API-reported model.</summary>
+    public sealed record AdaptationCompletionResult(
+        string Content,
+        string RequestedModel,
+        string Model,
+        TokenUsageDetail? Usage);
+
+    public sealed record AdaptationRequest(
+        string SystemPrompt,
+        string UserPrompt,
         string? Model = null);
 }

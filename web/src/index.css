@@ -120,3 +120,6 @@ a { color: #8ab4ff; }
   display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 0.85rem;
 }
 .footer-sep { opacity: 0.5; }
+
+.director-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.director-label { color: var(--muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }

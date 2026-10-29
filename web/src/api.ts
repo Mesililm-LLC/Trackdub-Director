@@ -10,6 +10,21 @@ export type SegmentInput = {
   timecode_seconds?: number | null;
   frame_sha256?: string | null;
   vision_enrichment?: boolean | null;
+  translation?: string | null;
+  context?: DirectorContextInput | null;
+  director_adaptation?: { target_register?: string | null } | null;
+};
+
+// Caller-supplied DirectorContext on an input segment. Null fields are omitted
+// by the server, so every field is optional here too.
+export type DirectorContextInput = {
+  speaker_id?: string | null;
+  speaker_label?: string | null;
+  emotion_tone_label?: string | null;
+  on_screen_text?: string[] | null;
+  scene_summary?: string | null;
+  speaker_description?: string | null;
+  burned_in_text?: string[] | null;
 };
 
 export type StatusResponse = {
@@ -198,6 +213,79 @@ export async function postSceneContext(segments: SegmentInput[]): Promise<SceneC
     throw new Error(`POST /api/scene-context ${r.status}: ${bodyText.slice(0, 600)}`);
   }
   return (await r.json()) as SceneContextBatch;
+}
+
+// Director Mode Stage B2: register adaptation. Fields the server omits when
+// null (WhenWritingNull) are optional: absence means not attempted / unknown.
+export type DirectorAdaptationUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  reasoning_tokens?: number;
+  cached_tokens?: number;
+};
+
+export type DirectorMeaningResult = {
+  verdict: string; // Pass | Fail | Error | NotEvaluated
+  issues: string[];
+  explanation: string;
+  model_id?: string;
+  prompt_template_version?: string;
+  timestamp_utc?: string;
+  usage: TranslationUsage;
+};
+
+export type DirectorAdaptationSegmentResult = {
+  id: string;
+  status: string; // Passed | Failed | NotRequested
+  text?: string;
+  original_translation?: string;
+  adapted_translation?: string;
+  changed?: boolean;
+  target_register?: string;
+  context_fields_used: string[];
+  error?: string;
+  provenance?: TranslationProvenance;
+  usage?: DirectorAdaptationUsage;
+  timing_verdict?: string; // Pass | Fail
+  estimated_seconds?: number;
+  window_seconds?: number;
+  meaning?: DirectorMeaningResult;
+  raw_content?: string;
+};
+
+export type DirectorAdaptationBatch = {
+  source_language: string;
+  target_language: string;
+  segments: DirectorAdaptationSegmentResult[];
+  usage_total: DirectorAdaptationUsage;
+  meaning_usage_total: TranslationUsage;
+};
+
+export type DirectorAdaptationInput = {
+  id: string;
+  text: string | null;
+  translation: string | null;
+  duration_seconds: number | null;
+  context: DirectorContextInput | null;
+  director_adaptation: { target_register: string | null } | null;
+};
+
+export async function postDirectorAdaptation(
+  segments: DirectorAdaptationInput[],
+  from = "en",
+  to = "es",
+): Promise<DirectorAdaptationBatch> {
+  const r = await fetch("/api/director-adaptation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments, sourceLanguage: from, targetLanguage: to }),
+  });
+  if (!r.ok) {
+    const bodyText = await r.text().catch(() => "");
+    throw new Error(`POST /api/director-adaptation ${r.status}: ${bodyText.slice(0, 600)}`);
+  }
+  return (await r.json()) as DirectorAdaptationBatch;
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
