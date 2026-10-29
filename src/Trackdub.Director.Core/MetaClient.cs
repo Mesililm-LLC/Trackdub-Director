@@ -460,7 +460,7 @@ public sealed class MetaClient : IDisposable
         {
             if (!root.TryGetProperty("output", out JsonElement output) || output.ValueKind != JsonValueKind.Array)
             {
-                throw new MetaApiException($"Unexpected Meta Model API response shape: missing or non-array 'output'.");
+                throw new MetaApiException("Unexpected Meta Model API response shape: missing or non-array 'output'.");
             }
 
             var parts = new List<string>();
@@ -473,6 +473,11 @@ public sealed class MetaClient : IDisposable
 
                 foreach (JsonElement part in ContentParts(item))
                 {
+                    if (part.ValueKind != JsonValueKind.Object)
+                    {
+                        throw new MetaApiException("Unexpected Meta Model API output content shape.");
+                    }
+
                     if (IsOutputText(part))
                     {
                         parts.Add(part.GetProperty("text").GetString() ?? string.Empty);
@@ -480,11 +485,23 @@ public sealed class MetaClient : IDisposable
                 }
             }
 
+            // A concept miss is represented by an explicit empty output_text part.
+            // A response with no such part is malformed, not a miss.
+            if (parts.Count == 0)
+            {
+                throw new MetaApiException("Unexpected Meta Model API response shape: missing output_text part.");
+            }
+
             return parts;
         }
 
         private static IEnumerable<JsonElement> ContentParts(JsonElement item)
         {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                throw new MetaApiException("Unexpected Meta Model API output item shape.");
+            }
+
             if (!item.TryGetProperty("content", out JsonElement content) || content.ValueKind != JsonValueKind.Array)
             {
                 return [];
