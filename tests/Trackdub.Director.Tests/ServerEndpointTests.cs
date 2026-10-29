@@ -355,6 +355,107 @@ public sealed class ServerEndpointTests
         }
     }
 
+    private static HttpMessageHandler SceneHandler()
+    {
+        return new DelegatingHandlerStub((request, _) =>
+        {
+            string? path = request.RequestUri?.AbsolutePath;
+            Assert.True(path is not null && path.EndsWith("/responses", StringComparison.Ordinal), $"Expected /responses, got {path}");
+            var payload = new
+            {
+                id = "resp_test",
+                @object = "response",
+                status = "completed",
+                model = "sam-3.1",
+                error = (object?)null,
+                output = new[]
+                {
+                    new
+                    {
+                        type = "message",
+                        role = "assistant",
+                        status = "completed",
+                        content = new[]
+                        {
+                            new
+                            {
+                                type = "output_text",
+                                text = "<0f>0<|box;x1=10;y1=10;x2=29;y2=49;w=64;h=64|><|mask;x=0;y=0;data=40,20,abc|>",
+                                annotations = Array.Empty<object>(),
+                                logprobs = Array.Empty<object>(),
+                            },
+                        },
+                    },
+                },
+                usage = new
+                {
+                    input_tokens = 0,
+                    input_tokens_details = new { cached_tokens = 0 },
+                    output_tokens = 0,
+                    output_tokens_details = new { reasoning_tokens = 0 },
+                    total_tokens = 0,
+                    images_processed = 1,
+                },
+            };
+            return Task.FromResult(JsonOk(payload));
+        });
+    }
+
+    [Fact]
+    public async Task SceneContext_happy_path_returns_parsed_region_and_honest_nulls()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(SceneHandler());
+        using HttpClient client = factory.CreateClient();
+
+        var body = new
+        {
+            segments = new[]
+            {
+                new
+                {
+                    id = "seg-001",
+                    text = "We need one more take.",
+                    frame_image_data_url = "data:image/png;base64,iVBORw0KGgo=",
+                    concepts = new[] { "red rectangle" },
+                    speaker_id = "spk-1",
+                },
+            },
+        };
+
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/scene-context", body);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        string json = await resp.Content.ReadAsStringAsync();
+        using JsonDocument doc = JsonDocument.Parse(json);
+        JsonElement root = doc.RootElement;
+
+        Assert.Equal(1, root.GetProperty("segments").GetArrayLength());
+        JsonElement seg = root.GetProperty("segments")[0];
+        Assert.Equal("seg-001", seg.GetProperty("id").GetString());
+        Assert.Equal("Parsed", seg.GetProperty("status").GetString());
+
+        JsonElement context = seg.GetProperty("context");
+        Assert.Equal("spk-1", context.GetProperty("speaker_id").GetString());
+        // Nulls are omitted by the server's WhenWritingNull convention: absence == unknown.
+        Assert.False(context.TryGetProperty("speaker_label", out _));
+        Assert.False(context.TryGetProperty("emotion_tone_label", out _));
+        Assert.False(context.TryGetProperty("on_screen_text", out _));
+        Assert.False(context.TryGetProperty("scene_summary", out _));
+
+        JsonElement region = context.GetProperty("regions")[0];
+        Assert.Equal("red rectangle", region.GetProperty("concept").GetString());
+        Assert.Equal(10, region.GetProperty("x1").GetInt32());
+        Assert.Equal(29, region.GetProperty("x2").GetInt32());
+        Assert.Equal(64, region.GetProperty("frame_width").GetInt32());
+
+        JsonElement provenance = seg.GetProperty("provenance");
+        Assert.Equal("sam-3.1", provenance.GetProperty("model_id").GetString());
+        Assert.Equal("scene-v1", provenance.GetProperty("prompt_template_version").GetString());
+        Assert.Equal(1, seg.GetProperty("images_processed").GetInt32());
+        Assert.Equal(1, root.GetProperty("images_processed_total").GetInt32());
+    }
+
     [Fact]
     public async Task Models_returns_account_models()
     {

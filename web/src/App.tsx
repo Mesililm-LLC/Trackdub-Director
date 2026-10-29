@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchStatus,
   postQa,
+  postSceneContext,
   postTranslate,
   type QaReport,
   type QaSegmentReport,
+  type SceneContextBatch,
+  type SceneSegmentResult,
   type SegmentInput,
   type StatusResponse,
   type TranslateBatch,
@@ -26,11 +29,12 @@ interface LineCardProps {
   seg: SegmentInput;
   q: QaSegmentReport | undefined;
   translated: string | null;
+  scene: SceneSegmentResult | undefined;
   isExpanded: boolean;
   onToggle: () => void;
 }
 
-function LineCard({ seg, q, translated, isExpanded, onToggle }: LineCardProps) {
+function LineCard({ seg, q, translated, scene, isExpanded, onToggle }: LineCardProps) {
   const displayTranslation = q?.final_translation ?? translated ?? "—";
   const windowSec = q?.window_seconds ?? seg.duration_seconds ?? null;
   const verdict = q?.final_verdict ?? null;
@@ -82,6 +86,14 @@ function LineCard({ seg, q, translated, isExpanded, onToggle }: LineCardProps) {
             <span className="verdict verdict-idle">Idle</span>
           )}
           <span className="attempts">Attempts: {attemptCount || "—"}</span>
+          {scene && (
+            <span
+              className={`verdict ${scene.status === "Parsed" ? "verdict-pass" : scene.status === "Failed" ? "verdict-fail" : "verdict-idle"}`}
+              title={`Scene context (${scene.provenance.model_id}, ${scene.provenance.prompt_template_version})`}
+            >
+              Scene: {scene.status}
+            </span>
+          )}
           {q && q.revisions.length > 0 && <span className="revisions-count">Revisions: {q.revisions.length}</span>}
         </div>
       </div>
@@ -148,6 +160,36 @@ function LineCard({ seg, q, translated, isExpanded, onToggle }: LineCardProps) {
           </div>
         </div>
       )}
+      {scene && (
+        <div className="attempts-panel" aria-label={`Scene context for ${seg.id}`}>
+          {scene.status === "Failed" ? (
+            <div className="meaning-issues">
+              <strong>Scene failed:</strong> {scene.error ?? "unknown error"}
+            </div>
+          ) : (
+            <>
+              <div className="token-usage">
+                Speaker: {scene.context?.speaker_label ?? scene.context?.speaker_id ?? "—"} · Emotion/tone: {scene.context?.emotion_tone_label ?? "—"}
+              </div>
+              <div className="token-usage">
+                On-screen text: {scene.context?.on_screen_text?.length ? scene.context.on_screen_text.join(" | ") : "—"}
+              </div>
+              <div className="token-usage">Scene summary: {scene.context?.scene_summary ?? "—"}</div>
+              {scene.context?.regions?.map((r, i) => (
+                <div key={`${seg.id}-region-${i}`} className="token-usage">
+                  Region: {r.concept} ({r.x1},{r.y1})-({r.x2},{r.y2}) in {r.frame_width}x{r.frame_height}
+                  {r.mask_data ? " · mask present" : ""}
+                </div>
+              ))}
+              {scene.context?.regions && scene.context.regions.length === 0 && <div className="token-usage">Regions: none found</div>}
+            </>
+          )}
+          <div className="token-usage">
+            Scene gate: model {scene.provenance.model_id} · template {scene.provenance.prompt_template_version} · {scene.provenance.timestamp_utc} · tokens{" "}
+            {scene.usage.total_tokens} · images {scene.images_processed}
+          </div>
+        </div>
+      )}
     </article>
   );
 }
@@ -160,7 +202,8 @@ export default function App() {
   const [to] = useState(DEFAULT_TO);
   const [qa, setQa] = useState<QaReport | null>(null);
   const [batch, setBatch] = useState<TranslateBatch | null>(null);
-  const [busy, setBusy] = useState<"translate" | "qa" | null>(null);
+  const [scene, setScene] = useState<SceneContextBatch | null>(null);
+  const [busy, setBusy] = useState<"translate" | "qa" | "scene" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -184,6 +227,11 @@ export default function App() {
     return new Map(qa.segments.map((s) => [s.id, s] as const));
   }, [qa]);
 
+  const sceneById = useMemo(() => {
+    if (!scene) return null;
+    return new Map(scene.segments.map((s) => [s.id, s] as const));
+  }, [scene]);
+
   const batchById = useMemo(() => {
     if (!batch) return null;
     return new Map(batch.segments.map((s) => [s.id, s.translation] as const));
@@ -191,6 +239,7 @@ export default function App() {
 
   const handleLoadSample = useCallback(() => {
     setSegments(sampleSegments as SegmentInput[]);
+    setScene(null);
     setQa(null);
     setBatch(null);
     setError(null);
@@ -209,6 +258,7 @@ export default function App() {
         }
       }
       setSegments(arr);
+      setScene(null);
       setQa(null);
       setBatch(null);
     } catch (e) {
@@ -252,6 +302,20 @@ export default function App() {
       void refreshStatus();
     }
   }, [segments, from, to, refreshStatus]);
+
+  const runScene = useCallback(async () => {
+    setBusy("scene");
+    setError(null);
+    try {
+      const res = await postSceneContext(segments);
+      setScene(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      void refreshStatus();
+    }
+  }, [segments, refreshStatus]);
 
   const toggle = useCallback((id: string) => {
     setExpanded((m) => ({ ...m, [id]: !m[id] }));
@@ -324,6 +388,9 @@ export default function App() {
             <button type="button" className="btn btn-primary" onClick={() => void runQa()} disabled={busy !== null || segments.length === 0}>
               {busy === "qa" ? "Running QA…" : "Run QA"}
             </button>
+            <button type="button" className="btn btn-primary" onClick={() => void runScene()} disabled={busy !== null || segments.length === 0}>
+              {busy === "scene" ? "Running Scene…" : "Run Scene"}
+            </button>
             <span className="toolbar-hint">
               {segments.length} segments · {from} → {to}
             </span>
@@ -346,6 +413,7 @@ export default function App() {
               seg={seg}
               q={qaById?.get(seg.id)}
               translated={batchById?.get(seg.id) ?? null}
+              scene={sceneById?.get(seg.id)}
               isExpanded={expanded[seg.id] ?? false}
               onToggle={() => toggle(seg.id)}
             />

@@ -323,6 +323,164 @@ public sealed class MetaClient : IDisposable
         return MeaningGate.ParseAndNormalize(raw.Content, raw.Model, raw.Usage, endpointHost);
     }
 
+    /// <summary>
+    /// Segment one concept phrase in one frame via POST /v1/responses (probe-verified:
+    /// sam-3.1 is not served on /chat/completions). The concept is sent verbatim as the
+    /// input_text part; a generic instruction returns empty output_text. A concept hit
+    /// returns output_text carrying box/mask tokens; a miss returns empty output_text,
+    /// which is a valid result here, not an error.
+    /// </summary>
+    public async Task<SegmentationResponseResult> SegmentConceptAsync(
+        string frameImageDataUrl,
+        string concept,
+        string? model = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(frameImageDataUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(concept);
+
+        string imageUrl = frameImageDataUrl.Trim();
+        if (!imageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
+            && !imageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Frame image must be a data:image/ URL or an https:// URL.", nameof(frameImageDataUrl));
+        }
+
+        string apiKey = MetaAuth.GetApiKey();
+        string baseUrl = MetaAuth.GetBaseUrl();
+        string resolvedModel = string.IsNullOrWhiteSpace(model) ? MetaAuth.GetSceneModel() : model.Trim();
+
+        var payload = new ResponsesRequest(
+            resolvedModel,
+            [new ResponsesInputItem("user",
+                [new ResponsesContentPart("input_text", concept.Trim(), null),
+                 new ResponsesContentPart("input_image", null, imageUrl)])]);
+
+        string json = JsonSerializer.Serialize(payload, JsonOptions);
+        string url = $"{baseUrl}/responses";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new MetaApiException($"Meta Model API request failed: {ex.Message}", ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new MetaApiException("Meta Model API request timed out.", ex);
+        }
+
+        string body;
+        using (response)
+        {
+            body = response.Content is null
+                ? string.Empty
+                : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = body.Length > 500 ? body[..500] : body;
+                throw new MetaApiException($"Meta Model API HTTP {(int)response.StatusCode}: {detail}");
+            }
+        }
+
+        return ParseSegmentationResponse(body, resolvedModel);
+    }
+
+    private static SegmentationResponseResult ParseSegmentationResponse(string body, string resolvedModel)
+    {
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(body);
+        }
+        catch (JsonException ex)
+        {
+            throw new MetaApiException($"Failed to parse Meta Model API response: {body[..Math.Min(500, body.Length)]}", ex);
+        }
+
+        using (doc)
+        {
+            JsonElement root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new MetaApiException($"Unexpected Meta Model API response shape: {body[..Math.Min(500, body.Length)]}");
+            }
+
+            if (root.TryGetProperty("error", out JsonElement errorEl) && errorEl.ValueKind == JsonValueKind.Object)
+            {
+                string message = errorEl.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
+                    ? m.GetString() ?? "unknown error"
+                    : "unknown error";
+                throw new MetaApiException($"Meta Model API error: {message}");
+            }
+
+            string? status = root.TryGetProperty("status", out JsonElement statusEl) && statusEl.ValueKind == JsonValueKind.String
+                ? statusEl.GetString()
+                : null;
+            if (status is not null && !string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new MetaApiException($"Meta Model API response not completed (status: {status}).");
+            }
+
+            string responseModel = root.TryGetProperty("model", out JsonElement modelEl) && modelEl.ValueKind == JsonValueKind.String
+                ? modelEl.GetString() ?? resolvedModel
+                : resolvedModel;
+            string? responseId = root.TryGetProperty("id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
+                ? idEl.GetString()
+                : null;
+
+            var textParts = new List<string>();
+            if (root.TryGetProperty("output", out JsonElement outputEl) && outputEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in outputEl.EnumerateArray())
+                {
+                    if (!item.TryGetProperty("content", out JsonElement contentEl) || contentEl.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (JsonElement part in contentEl.EnumerateArray())
+                    {
+                        if (part.TryGetProperty("type", out JsonElement typeEl)
+                            && typeEl.ValueKind == JsonValueKind.String
+                            && string.Equals(typeEl.GetString(), "output_text", StringComparison.Ordinal)
+                            && part.TryGetProperty("text", out JsonElement textEl)
+                            && textEl.ValueKind == JsonValueKind.String)
+                        {
+                            textParts.Add(textEl.GetString() ?? string.Empty);
+                        }
+                    }
+                }
+            }
+
+            TokenUsage? usage = null;
+            int imagesProcessed = 0;
+            if (root.TryGetProperty("usage", out JsonElement usageEl) && usageEl.ValueKind == JsonValueKind.Object)
+            {
+                usage = new TokenUsage(
+                    GetInt(usageEl, "input_tokens"),
+                    GetInt(usageEl, "output_tokens"),
+                    GetInt(usageEl, "total_tokens"));
+                imagesProcessed = GetInt(usageEl, "images_processed");
+            }
+
+            return new SegmentationResponseResult(string.Concat(textParts), responseModel, usage, imagesProcessed, responseId);
+        }
+
+        static int GetInt(JsonElement obj, string name)
+        {
+            return obj.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
+        }
+    }
+
     private static string GetEndpointHostForUsage()
     {
         string baseUrl = MetaAuth.GetBaseUrl();
@@ -399,6 +557,27 @@ public sealed class MetaClient : IDisposable
         int PromptTokens,
         int CompletionTokens,
         int TotalTokens);
+
+    private sealed record ResponsesRequest(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("input")] ResponsesInputItem[] Input);
+
+    private sealed record ResponsesInputItem(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("content")] ResponsesContentPart[] Content);
+
+    private sealed record ResponsesContentPart(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("text")] string? Text,
+        [property: JsonPropertyName("image_url")] string? ImageUrl);
+
+    /// <summary>Raw /v1/responses segmentation outcome. OutputText is empty on a concept miss.</summary>
+    public sealed record SegmentationResponseResult(
+        string OutputText,
+        string Model,
+        TokenUsage? Usage,
+        int ImagesProcessed,
+        string? ResponseId);
 
     public sealed record ModelInfo(
         string Id,

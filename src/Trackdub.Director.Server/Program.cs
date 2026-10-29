@@ -16,6 +16,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton(_ => new HttpClient(new HttpClientHandler()) { Timeout = TimeSpan.FromSeconds(60) });
 builder.Services.AddTransient(sp => new MetaClient(sp.GetRequiredService<HttpClient>()));
 builder.Services.AddTransient<TranslationService>(sp => new TranslationService(sp.GetRequiredService<MetaClient>()));
+builder.Services.AddTransient<SceneContextService>(sp => new SceneContextService(sp.GetRequiredService<MetaClient>()));
 
 // JSON: keep defaults but ensure case-insensitive reads and respect JsonPropertyName attributes
 builder.Services.ConfigureHttpJsonOptions(opts =>
@@ -231,6 +232,47 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
     }
 });
 
+app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextService sceneService, CancellationToken ct) =>
+{
+    SceneSegmentInput[]? segments;
+    try
+    {
+        segments = await ReadSceneRequestAsync(request, ct).ConfigureAwait(false);
+    }
+    catch (JsonException ex)
+    {
+        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    if (segments is null || segments.Length == 0)
+    {
+        return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, frame_image_data_url?, concepts?, speaker_id?, speaker_label? }." });
+    }
+
+    if (segments.Any(s => string.IsNullOrWhiteSpace(s.Id)))
+    {
+        return Results.BadRequest(new { error = "Each segment must have a non-empty 'id'." });
+    }
+
+    try
+    {
+        SceneContextBatch batch = await sceneService.RunAsync(segments, ct).ConfigureAwait(false);
+        return Results.Json(batch);
+    }
+    catch (MetaApiException ex)
+    {
+        return MapMetaException(ex);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 // SPA fallback: for non-/api routes, serve index.html if it exists (after a prod build)
 app.MapFallback(async (HttpContext ctx) =>
 {
@@ -427,6 +469,27 @@ public partial class Program
         }
 
         return new QaApiRequest(segments, from, to, optionsDto);
+    }
+
+    private static async Task<SceneSegmentInput[]?> ReadSceneRequestAsync(HttpRequest http, CancellationToken ct)
+    {
+        using var doc = await JsonDocument.ParseAsync(http.Body, cancellationToken: ct).ConfigureAwait(false);
+        JsonElement root = doc.RootElement;
+
+        // Accept either { segments: [...] } wrapper or raw [...] array
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            return JsonSerializer.Deserialize<SceneSegmentInput[]>(root.GetRawText(), JsonOptionsWeb)
+                ?? throw new InvalidOperationException("Invalid segments array.");
+        }
+
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("segments", out JsonElement segEl))
+        {
+            throw new InvalidOperationException("Request must include a non-empty 'segments' array.");
+        }
+
+        return JsonSerializer.Deserialize<SceneSegmentInput[]>(segEl.GetRawText(), JsonOptionsWeb)
+            ?? throw new InvalidOperationException("Invalid 'segments' array.");
     }
 
     private static readonly JsonSerializerOptions JsonOptionsWeb = new(JsonSerializerDefaults.Web)
