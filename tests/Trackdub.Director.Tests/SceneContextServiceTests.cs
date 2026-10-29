@@ -699,6 +699,133 @@ public sealed class SceneContextServiceTests
     }
 
     [Fact]
+    public async Task Vision_uses_model_captured_at_run_start()
+    {
+        using var auth = FakeAuth();
+        string? visionBody = null;
+        var (service, http) = BuildService(async (request, cancellationToken) =>
+        {
+            string path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/chat/completions", StringComparison.Ordinal))
+            {
+                visionBody = await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                Environment.SetEnvironmentVariable("META_VISION_MODEL", "muse-spark-1.1");
+                return RawJson(ProbeVisionResponseBody);
+            }
+
+            // Simulate the env changing mid-run: request and provenance must not drift.
+            Environment.SetEnvironmentVariable("META_VISION_MODEL", "muse-spark-1.3");
+            return ResponsesOk(ProbeOutputText);
+        });
+        using (http)
+        {
+            var input = new SceneSegmentInput("seg-001", "Action!", FrameDataUrl, ["red rectangle"], VisionEnrichment: true);
+
+            SceneContextBatch batch = await service.RunAsync([input]);
+
+            SceneSegmentResult result = Assert.Single(batch.Segments);
+            AssertParsed(result);
+            Assert.NotNull(visionBody);
+            using JsonDocument doc = JsonDocument.Parse(visionBody!);
+            Assert.Equal("muse-spark-1.1", doc.RootElement.GetProperty("model").GetString());
+            AssertVisionProvenance(result);
+        }
+    }
+
+    [Fact]
+    public async Task Vision_blank_content_retains_usage_and_fails_closed()
+    {
+        using var auth = FakeAuth();
+        var (service, http) = BuildService((_, _) => Task.FromResult(ChatVisionOk(string.Empty)));
+        using (http)
+        {
+            var input = new SceneSegmentInput("seg-001", "Action!", FrameDataUrl, Concepts: null, VisionEnrichment: true);
+
+            SceneContextBatch batch = await service.RunAsync([input]);
+
+            SceneSegmentResult result = Assert.Single(batch.Segments);
+            AssertFailed(result);
+            Assert.Equal(string.Empty, result.VisionRawContent);
+            // The API billed the call even though its content was unusable; keep the spend visible.
+            AssertVisionUsage(result);
+            AssertVisionProvenance(result);
+        }
+    }
+
+    [Fact]
+    public async Task Vision_regions_context_is_capped()
+    {
+        using var auth = FakeAuth();
+        string samOutput = string.Concat(Enumerable.Range(0, 21).Select(i => $"<|box;x1={i};y1=0;x2={i + 1};y2=1;w=100;h=100|>"));
+        string? visionBody = null;
+        var (service, http) = BuildService(async (request, cancellationToken) =>
+        {
+            string path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/chat/completions", StringComparison.Ordinal))
+            {
+                visionBody = await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                return RawJson(ProbeVisionResponseBody);
+            }
+
+            return ResponsesOk(samOutput);
+        });
+        using (http)
+        {
+            var input = new SceneSegmentInput("seg-001", "Action!", FrameDataUrl, ["red rectangle"], VisionEnrichment: true);
+
+            SceneContextBatch batch = await service.RunAsync([input]);
+
+            SceneSegmentResult result = Assert.Single(batch.Segments);
+            AssertParsed(result);
+            // Stored regions are uncapped; only the text context sent to vision is bounded.
+            Assert.Equal(21, result.Context!.Regions!.Length);
+            Assert.NotNull(visionBody);
+            using JsonDocument doc = JsonDocument.Parse(visionBody!);
+            string regionsText = doc.RootElement.GetProperty("messages")[0].GetProperty("content")[1].GetProperty("text").GetString()!;
+            Assert.Contains("and 1 more (not shown)", regionsText, StringComparison.Ordinal);
+            Assert.DoesNotContain("(20,0)-", regionsText, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Frame_hash_ignores_base64_marker_in_remote_url()
+    {
+        using var auth = FakeAuth();
+        int calls = 0;
+        var (service, http) = BuildService((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(ResponsesOk(ProbeOutputText));
+        });
+        using (http)
+        {
+            // The suffix decodes to bytes matching the expected hash; a remote URL
+            // must still never be "verified" against its own suffix.
+            var input = new SceneSegmentInput(
+                "seg-001", "Action!", "https://example.invalid/frame;token=1;base64,iVBORw0KGgo=", ["red rectangle"],
+                FrameSha256: FrameSha256Hex(), VisionEnrichment: true);
+
+            SceneContextBatch batch = await service.RunAsync([input]);
+
+            SceneSegmentResult result = Assert.Single(batch.Segments);
+            Assert.Equal(0, calls);
+            AssertFailed(result);
+            Assert.Contains("could not be verified", result.Error!, StringComparison.Ordinal);
+            Assert.Null(result.FrameSha256);
+        }
+    }
+
+    [Fact]
+    public void Vision_parser_duplicate_key_is_malformed()
+    {
+        VisionParseResult parsed = SceneVisionParser.Parse(
+            "{\"scene_summary\": \"x\", \"scene_summary\": \"y\", \"emotion_tone_label\": null, \"speaker_description\": null, \"on_screen_text\": [], \"burned_in_text\": []}");
+        Assert.True(parsed.IsMalformed);
+        Assert.Null(parsed.Enrichment);
+        Assert.Contains("duplicate", parsed.Error!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parser_empty_text_is_a_miss_not_malformed()
     {
         SegmentationParseResult parsed = SceneSegmentationParser.Parse("   ", "person");

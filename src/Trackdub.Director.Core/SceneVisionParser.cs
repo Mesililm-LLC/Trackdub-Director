@@ -75,6 +75,16 @@ public static class SceneVisionParser
 
     private static string? RequireKeys(JsonElement root)
     {
+        // Duplicates are malformed: GetProperty would silently keep the last value.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonProperty property in root.EnumerateObject())
+        {
+            if (!seen.Add(property.Name))
+            {
+                return $"Vision response contains duplicate key '{property.Name}'.";
+            }
+        }
+
         string[] required = ["scene_summary", "emotion_tone_label", "speaker_description", "on_screen_text", "burned_in_text"];
         foreach (string key in required)
         {

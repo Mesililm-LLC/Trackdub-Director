@@ -87,8 +87,11 @@ public sealed record SceneSegmentInput(
 
 /// <summary>
 /// Provenance for the Stage B1 vision pass on one segment. ModelId is the model
-/// the API reports as having served the call; RequestedModelId is what the lane
-/// asked for (META_VISION_MODEL, default muse-spark-1.1). Present whenever a
+/// the API reports as having served the call, falling back to RequestedModelId
+/// when the call failed before any response arrived (the same fallback the
+/// Stage A segmentation provenance uses); equal values on a Failed result
+/// therefore do not by themselves prove the API served the request.
+/// RequestedModelId is what the lane asked for (META_VISION_MODEL, default muse-spark-1.1). Present whenever a
 /// vision call was attempted, including on Failed results; null when enrichment
 /// was not requested or never attempted.
 /// </summary>

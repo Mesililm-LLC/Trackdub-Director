@@ -332,7 +332,9 @@ public sealed class MetaClient : IDisposable
             JsonSerializer.Serialize(payload, JsonOptions));
         string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         ChatCompletionResponse? parsed = ParseChatResponse(new BodyText(body));
-        string content = ExtractContent(parsed, new BodyText(body));
+        // Vision callers own content validation and fail closed in their parser;
+        // blank content must not discard usage the API has already billed.
+        string content = parsed?.Choices?.FirstOrDefault()?.Message?.Content?.Trim() ?? string.Empty;
         return new VisionCompletionResult(content, resolvedModel, parsed?.Model ?? resolvedModel, ToUsageDetail(parsed?.Usage));
     }
 

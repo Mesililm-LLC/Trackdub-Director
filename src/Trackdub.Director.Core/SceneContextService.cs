@@ -201,6 +201,13 @@ public sealed class SceneContextService
     private static string? TryComputeFrameSha256(string frameImageDataUrl, out string? computed)
     {
         computed = null;
+        // Only data URLs carry local bytes; a remote URL that merely contains the
+        // marker must never be "verified" against its own suffix.
+        if (!frameImageDataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         int marker = frameImageDataUrl.IndexOf(";base64,", StringComparison.OrdinalIgnoreCase);
         if (marker < 0)
         {
@@ -232,7 +239,7 @@ public sealed class SceneContextService
         try
         {
             response = await _client.DescribeFrameAsync(
-                new MetaClient.VisionRequest(work.Segment.FrameImageDataUrl!, VisionPromptText, accumulator.RegionsContextText()),
+                new MetaClient.VisionRequest(work.Segment.FrameImageDataUrl!, VisionPromptText, accumulator.RegionsContextText(), Model: work.Run.VisionModelId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (MetaApiException ex) when (!IsMissingKey(ex))
@@ -496,9 +503,13 @@ public sealed class SceneContextService
                 return null;
             }
 
-            string joined = string.Join("; ", _regions.Select(r => FormattableString.Invariant(
+            const int maxRegions = 20;
+            string joined = string.Join("; ", _regions.Take(maxRegions).Select(r => FormattableString.Invariant(
                 $"{r.Concept} box ({r.X1},{r.Y1})-({r.X2},{r.Y2}) in {r.FrameWidth}x{r.FrameHeight}")));
-            return $"Segmentation regions already found in this frame: {joined}.";
+            string suffix = _regions.Count > maxRegions
+                ? FormattableString.Invariant($"; and {_regions.Count - maxRegions} more (not shown)")
+                : string.Empty;
+            return $"Segmentation regions already found in this frame: {joined}{suffix}.";
         }
 
         private VisionProvenance? VisionProvenanceOrNull(SegmentWork work)
