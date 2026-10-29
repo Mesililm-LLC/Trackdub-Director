@@ -231,6 +231,9 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
         }
     }
 });
+const int MaxSceneSegments = 100;
+const int MaxConceptsPerSegment = 8;
+
 
 app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextService sceneService, CancellationToken ct) =>
 {
@@ -253,9 +256,19 @@ app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextServic
         return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, frame_image_data_url?, concepts?, speaker_id?, speaker_label? }." });
     }
 
-    if (segments.Any(s => string.IsNullOrWhiteSpace(s.Id)))
+    if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
     {
         return Results.BadRequest(new { error = "Each segment must have a non-empty 'id'." });
+    }
+
+    if (segments.Length > MaxSceneSegments)
+    {
+        return Results.BadRequest(new { error = $"At most {MaxSceneSegments} segments are allowed per request." });
+    }
+
+    if (segments.Any(s => (s.Concepts?.Count(c => !string.IsNullOrWhiteSpace(c)) ?? 0) > MaxConceptsPerSegment))
+    {
+        return Results.BadRequest(new { error = $"At most {MaxConceptsPerSegment} concepts are allowed per segment." });
     }
 
     try

@@ -327,36 +327,85 @@ public static class SceneSegmentationParser
 
             MatchCollection masks = MaskToken.Matches(_document.Raw);
             var regions = new List<SceneRegion>(boxes.Count);
-
+            // Build a position-ordered list of (tokenType, matchIndex) to associate each mask
+            // with the box it follows, not by parallel array index.
+            var boxPositions = new List<(int Position, int MatchIndex)>(boxes.Count);
             for (int i = 0; i < boxes.Count; i++)
+            for (int i = 0; i < boxes.Count; i++)
+                boxPositions.Add((boxes[i].Index, i));
+                regions.Add(new SceneRegion(_document.Concept, box.X1, box.Y1, box.X2, box.Y2, box.W, box.H, mask.X, mask.Y, mask.Data));
+            }
+            var maskPositions = new List<(int Position, int MatchIndex)>(masks.Count);
+            for (int i = 0; i < masks.Count; i++)
             {
-                string? boxError = TryParseBox(new TokenBody(boxes[i].Groups[1].Value), out BoxBounds box);
+                maskPositions.Add((masks[i].Index, i));
+            }
+
+            // For each box, find the mask that immediately follows it (before the next box).
+            for (int i = 0; i < boxPositions.Count; i++)
+            {
+                int boxPos = boxPositions[i].Position;
+                int nextBoxPos = i + 1 < boxPositions.Count ? boxPositions[i + 1].Position : int.MaxValue;
+
+                string? boxError = TryParseBox(new TokenBody(boxes[boxPositions[i].MatchIndex].Groups[1].Value), out BoxBounds box);
                 if (boxError is not null)
                 {
                     return Malformed($"Malformed box token for concept '{_document.Concept}': {boxError}");
                 }
 
-                MaskFields mask = ParseMaskAt(masks, i);
-                if (mask.Error is not null)
+                // Find the first mask whose position is after this box and before the next box.
+                int? associatedMaskIndex = null;
+                foreach (var (mPos, mIdx) in maskPositions)
                 {
-                    return Malformed($"Malformed mask token for concept '{_document.Concept}': {mask.Error}");
+                    if (mPos > boxPos && mPos < nextBoxPos)
+                    {
+                        associatedMaskIndex = mIdx;
+                        break;
+                    }
+                }
+
+                MaskFields mask = default;
+                if (associatedMaskIndex.HasValue)
+                {
+                    string? maskError = TryParseMask(new TokenBody(masks[associatedMaskIndex.Value].Groups[1].Value), out mask);
+                    if (maskError is not null)
+                    {
+                        return Malformed($"Malformed mask token for concept '{_document.Concept}': {maskError}");
+                    }
                 }
 
                 regions.Add(new SceneRegion(_document.Concept, box.X1, box.Y1, box.X2, box.Y2, box.W, box.H, mask.X, mask.Y, mask.Data));
             }
 
-            return new SegmentationParseResult(false, regions.ToArray(), null);
-        }
-
-        private MaskFields ParseMaskAt(MatchCollection masks, int index)
-        {
-            if (index >= masks.Count)
+            // Validate any mask tokens that are not associated with a box (e.g., after the last box
+            // where no next-box boundary caps them, or masks before all boxes).
+            foreach (var (mPos, mIdx) in maskPositions)
             {
-                return default;
+                bool associated = false;
+                for (int i = 0; i < boxPositions.Count; i++)
+                {
+                    int boxPos = boxPositions[i].Position;
+                    int nextBoxPos = i + 1 < boxPositions.Count ? boxPositions[i + 1].Position : int.MaxValue;
+                    if (mPos > boxPos && mPos < nextBoxPos)
+                    {
+                        associated = true;
+                        break;
+                    }
+                }
+
+                if (!associated)
+                {
+                    // Validate the unassociated mask token — if malformed, report it.
+                    string? maskError = TryParseMask(new TokenBody(masks[mIdx].Groups[1].Value), out _);
+                    if (maskError is not null)
+                    {
+                        return Malformed($"Malformed mask token for concept '{_document.Concept}': {maskError}");
+                    }
+                }
             }
 
-            string? error = TryParseMask(new TokenBody(masks[index].Groups[1].Value), out MaskFields mask);
-            return error is null ? mask : mask with { Error = error };
+            return new SegmentationParseResult(false, regions.ToArray(), null);
+            return new SegmentationParseResult(false, regions.ToArray(), null);
         }
 
         private static string? TryParseBox(TokenBody body, out BoxBounds box)
@@ -394,7 +443,9 @@ public static class SceneSegmentationParser
                 && box.X1 >= 0
                 && box.Y1 >= 0
                 && box.X2 >= box.X1
-                && box.Y2 >= box.Y1;
+                && box.Y2 >= box.Y1
+                && box.X2 <= box.W
+                && box.Y2 <= box.H;
         }
 
         private static string? TryParseMask(TokenBody body, out MaskFields mask)

@@ -522,7 +522,7 @@ interface LineListProps {
   segments: SegmentInput[];
   qaById: Map<string, QaSegmentReport> | null;
   batchById: Map<string, string> | null;
-  sceneById: Map<string, SceneSegmentResult> | null;
+  sceneById: Map<number, SceneSegmentResult> | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
 }
@@ -530,13 +530,13 @@ interface LineListProps {
 function LineList({ segments, qaById, batchById, sceneById, expanded, onToggle }: LineListProps) {
   return (
     <div className="lines" role="list">
-      {segments.map((seg) => (
+      {segments.map((seg, idx) => (
         <LineCard
           key={seg.id}
           seg={seg}
           q={qaById?.get(seg.id)}
           translated={batchById?.get(seg.id) ?? null}
-          scene={sceneById?.get(seg.id)}
+          scene={sceneById?.get(idx)}
           isExpanded={expanded[seg.id] ?? false}
           onToggle={() => onToggle(seg.id)}
         />
@@ -597,7 +597,7 @@ function useReports() {
     setBatch(null);
     setScene(null);
   }, []);
-
+  const sceneById = useMemo(() => (scene ? new Map(scene.segments.map((s, i) => [i, s] as const)) : null), [scene]);
   const qaById = useMemo(() => (qa ? new Map(qa.segments.map((s) => [s.id, s] as const)) : null), [qa]);
   const sceneById = useMemo(() => (scene ? new Map(scene.segments.map((s) => [s.id, s] as const)) : null), [scene]);
   const batchById = useMemo(() => (batch ? new Map(batch.segments.map((s) => [s.id, s.translation] as const)) : null), [batch]);
@@ -651,9 +651,10 @@ interface ActionsContext {
   setQa: (qa: QaReport) => void;
   setScene: (scene: SceneContextBatch) => void;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
+  sceneRequestRef: React.RefObject<number>;
 }
 
-function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setError }: ActionsContext) {
+function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setError, sceneRequestRef }: ActionsContext) {
   const [busy, setBusy] = useState<BusyState>(null);
 
   const run = useCallback(async (kind: Exclude<BusyState, null>, action: () => Promise<void>) => {
@@ -677,10 +678,13 @@ function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setSce
     () => run("qa", async () => setQa(await postQa(segments, from, to))),
     [run, segments, from, to, setQa],
   );
-  const runScene = useCallback(
-    () => run("scene", async () => setScene(await postSceneContext(segments))),
-    [run, segments, setScene],
-  );
+  const runScene = useCallback(async () => {
+    const requestId = ++sceneRequestRef.current;
+    await run("scene", async () => {
+      const res = await postSceneContext(segments);
+      if (requestId === sceneRequestRef.current) setScene(res);
+    });
+  }, [run, segments, setScene, sceneRequestRef]);
 
   return { busy, runTranslate, runQa, runScene };
 }
@@ -689,7 +693,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const { status, statusError, refreshStatus } = useStatus();
   const reports = useReports();
-  const input = useSegments(reports.reset, setError);
+  const sceneRequestRef = useRef(0);
+  const onReset = useCallback(() => {
+    reports.reset();
+    sceneRequestRef.current += 1;
+  }, [reports]);
+  const input = useSegments(onReset, setError);
   const actions = useActions({
     segments: input.segments,
     from: DEFAULT_FROM,
@@ -699,6 +708,7 @@ export default function App() {
     setQa: reports.setQa,
     setScene: reports.setScene,
     setError,
+    sceneRequestRef,
   });
 
   return (

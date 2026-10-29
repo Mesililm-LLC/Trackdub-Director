@@ -280,7 +280,7 @@ public sealed class MetaClient : IDisposable
 
         using HttpRequestMessage httpRequest = CreateAuthorizedRequest(
             HttpMethod.Post,
-            $"{MetaAuth.GetBaseUrl()}/responses",
+            $"{MetaAuth.GetBaseUrl().TrimEnd('/')}/responses",
             JsonSerializer.Serialize(payload, JsonOptions));
         string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         return SegmentationResponseParser.Parse(new SegmentationBody(new BodyText(body), new ModelId(resolvedModel)));
@@ -460,12 +460,17 @@ public sealed class MetaClient : IDisposable
         {
             if (!root.TryGetProperty("output", out JsonElement output) || output.ValueKind != JsonValueKind.Array)
             {
-                return [];
+                throw new MetaApiException($"Unexpected Meta Model API response shape: missing or non-array 'output'.");
             }
 
             var parts = new List<string>();
             foreach (JsonElement item in output.EnumerateArray())
             {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    throw new MetaApiException("Unexpected Meta Model API output item shape.");
+                }
+
                 foreach (JsonElement part in ContentParts(item))
                 {
                     if (IsOutputText(part))
