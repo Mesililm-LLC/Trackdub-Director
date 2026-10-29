@@ -49,3 +49,13 @@ live-model tests.
 No greenfield web app, no live/streaming dub. Keep the hackathon scope
 discipline from `README.md`: pipeline stages only, with one real feedback loop
 (the QA/timing bounce-back).
+
+## Commands
+
+- `npm run dev` — run the development task
+- `npm run build` — build the project
+- `npm test` — run the full test suite
+
+## Code Map
+
+- `web/` — application source
