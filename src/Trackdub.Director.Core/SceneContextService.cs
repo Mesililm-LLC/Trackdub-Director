@@ -129,7 +129,8 @@ public sealed class SceneContextService
         try
         {
             response = await _client.SegmentConceptAsync(
-                work.Segment.FrameImageDataUrl!, concept, model: null, cancellationToken).ConfigureAwait(false);
+                new MetaClient.SegmentationRequest(work.Segment.FrameImageDataUrl!, concept),
+                cancellationToken).ConfigureAwait(false);
         }
         catch (MetaApiException ex) when (!IsMissingKey(ex))
         {

@@ -130,7 +130,7 @@ public sealed class QaService
 
         // Initial translation
         MetaClient.ChatCompletionResult initial = await _client.TranslateWithUsageAsync(
-            segment.Text, sourceLanguage, targetLanguage, cancellationToken).ConfigureAwait(false);
+            new MetaClient.TranslationRequest(segment.Text, sourceLanguage, targetLanguage), cancellationToken).ConfigureAwait(false);
 
         string currentTranslation = initial.Content;
         var tokenAccum = new TokenAccum(initial.Usage);
@@ -169,8 +169,10 @@ public sealed class QaService
         for (int attempt = 1; attempt <= _options.MaxAttempts; attempt++)
         {
             MetaClient.ChatCompletionResult revision = await _client.ReviseTranslationForTimingAsync(
-                segment.Text, currentTranslation, sourceLanguage, targetLanguage,
-                windowSeconds, maxChars, lastMeaningIssues, cancellationToken).ConfigureAwait(false);
+                new MetaClient.TimingRevisionRequest(
+                    segment.Text, currentTranslation, sourceLanguage, targetLanguage,
+                    windowSeconds, maxChars, lastMeaningIssues),
+                cancellationToken).ConfigureAwait(false);
 
             currentTranslation = revision.Content;
             tokenAccum.Add(revision.Usage);
@@ -218,7 +220,9 @@ public sealed class QaService
             try
             {
                 meaning = await _client.CheckMeaningAsync(
-                    context.SourceText, attempt.Translation, context.SourceLanguage, context.TargetLanguage, cancellationToken).ConfigureAwait(false);
+                    new MetaClient.MeaningCheckRequest(
+                        context.SourceText, attempt.Translation, context.SourceLanguage, context.TargetLanguage),
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (
                 ex is MetaApiException or HttpRequestException or InvalidOperationException

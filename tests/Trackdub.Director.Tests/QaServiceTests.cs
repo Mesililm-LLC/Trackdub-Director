@@ -475,8 +475,10 @@ public sealed class QaServiceTests
             }));
         using var client = new MetaClient(http);
 
-        await client.ReviseTranslationForTimingAsync("Hello.", "Hola a todos.", "en", "es", 1.0, 15,
-            meaningIssues: issue is null ? null : [issue]);
+        await client.ReviseTranslationForTimingAsync(
+            new MetaClient.TimingRevisionRequest(
+                "Hello.", "Hola a todos.", "en", "es", 1.0, 15,
+                MeaningIssues: issue is null ? null : [issue]));
 
         Assert.NotNull(userPrompt);
         Assert.Contains("Rewrite it shorter, at most 15 characters, preserving meaning.", userPrompt, StringComparison.Ordinal);
