@@ -44,25 +44,6 @@ public sealed class MeaningGateTests
         Assert.Contains(r.Issues, i => i.Contains("unparseable", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Theory]
-    [InlineData("[]")]
-    [InlineData("[1, 2]")]
-    [InlineData("null")]
-    [InlineData("true")]
-    [InlineData("false")]
-    [InlineData("42")]
-    [InlineData("\"pass\"")]
-    public void Parse_non_object_root_fails_closed(string raw)
-    {
-        MeaningCheckResult r = MeaningGate.ParseAndNormalize(raw, "muse-spark-1.1", Usage, "api.meta.ai");
-
-        Assert.Equal(MeaningVerdict.Fail, r.Verdict);
-        Assert.Equal(new[] { "unparseable meaning response" }, r.Issues);
-        Assert.Contains("failing closed", r.Explanation, StringComparison.Ordinal);
-        Assert.Equal(raw, r.RawContent);
-        Assert.Equal(Usage, r.Usage);
-    }
-
     [Fact]
     public void Parse_uppercase_verdict_normalized()
     {
@@ -72,17 +53,24 @@ public sealed class MeaningGateTests
     }
 
     /// <summary>
-    /// A wrong-typed issues field must never degrade to "no issues": that would turn a reported
-    /// meaning loss into a pass and let a timing-only translation through the gate.
+    /// Non-object responses and wrong-typed issues must fail closed rather than
+    /// let a timing-only translation through the gate.
     /// </summary>
     [Theory]
+    [InlineData("[]")]
+    [InlineData("[1, 2]")]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("42")]
+    [InlineData("\"pass\"")]
     [InlineData("{\"verdict\":\"pass\",\"issues\":\"dropped negation\",\"explanation\":\"x\"}")]
     [InlineData("{\"verdict\":\"pass\",\"issues\":null,\"explanation\":\"x\"}")]
     [InlineData("{\"verdict\":\"pass\",\"issues\":{\"note\":\"dropped negation\"},\"explanation\":\"x\"}")]
     [InlineData("{\"verdict\":\"pass\",\"issues\":[1,2],\"explanation\":\"x\"}")]
     [InlineData("{\"verdict\":\"pass\",\"issues\":[\"dropped negation\",true],\"explanation\":\"x\"}")]
     [InlineData("{\"verdict\":\"pass\",\"issues\":[null],\"explanation\":\"x\"}")]
-    public void Parse_malformed_issues_fails_closed(string raw)
+    public void Parse_invalid_response_fails_closed(string raw)
     {
         MeaningCheckResult r = MeaningGate.ParseAndNormalize(raw, "muse-spark-1.1", Usage, "api.meta.ai");
 
@@ -90,6 +78,7 @@ public sealed class MeaningGateTests
         Assert.Equal(new[] { "unparseable meaning response" }, r.Issues);
         Assert.Contains("failing closed", r.Explanation, StringComparison.Ordinal);
         Assert.Equal(raw, r.RawContent);
+        Assert.Equal(Usage, r.Usage);
     }
 
     [Fact]

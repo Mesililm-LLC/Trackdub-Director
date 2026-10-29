@@ -127,36 +127,7 @@ public static class MeaningGate
                 explanation = expEl.GetString()?.Trim() ?? string.Empty;
             }
 
-            if (string.IsNullOrWhiteSpace(verdictRaw))
-            {
-                return new MeaningCheckResult(
-                    MeaningVerdict.Fail,
-                    issues.Length > 0 ? issues : ["unparseable verdict"],
-                    string.IsNullOrWhiteSpace(explanation) ? "Model returned no verdict; failing closed." : explanation,
-                    modelId,
-                    PromptTemplateVersion,
-                    timestampUtc,
-                    usage,
-                    rawContent);
-            }
-
-            string vNorm = verdictRaw.Trim().ToLowerInvariant();
-            MeaningVerdict verdict = vNorm == "pass" ? MeaningVerdict.Pass : MeaningVerdict.Fail;
-
-            // Normalization: pass with non-empty material issues => fail
-            if (verdict == MeaningVerdict.Pass && issues.Length > 0)
-            {
-                verdict = MeaningVerdict.Fail;
-                if (string.IsNullOrWhiteSpace(explanation))
-                {
-                    explanation = "Reported pass with material issues; normalized to fail.";
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(explanation))
-            {
-                explanation = verdict == MeaningVerdict.Pass ? "Meaning preserved." : "Material meaning divergence.";
-            }
+            (MeaningVerdict verdict, issues, explanation) = NormalizeVerdict(verdictRaw, issues, explanation);
 
             return new MeaningCheckResult(verdict, issues, explanation, modelId, PromptTemplateVersion, timestampUtc, usage, rawContent);
         }
@@ -166,6 +137,28 @@ public static class MeaningGate
             string explanation = $"Unparseable meaning response; failing closed. Raw: {Truncate(rawContent, 300)}";
             return new MeaningCheckResult(MeaningVerdict.Fail, ["unparseable meaning response"], explanation, modelId, PromptTemplateVersion, timestampUtc, usage, rawContent);
         }
+    }
+
+    private static (MeaningVerdict Verdict, string[] Issues, string Explanation) NormalizeVerdict(
+        string? rawVerdict, string[] issues, string explanation)
+    {
+        if (string.IsNullOrWhiteSpace(rawVerdict))
+        {
+            return (MeaningVerdict.Fail,
+                issues.Length > 0 ? issues : ["unparseable verdict"],
+                string.IsNullOrWhiteSpace(explanation) ? "Model returned no verdict; failing closed." : explanation);
+        }
+
+        bool reportedPass = string.Equals(rawVerdict.Trim(), "pass", StringComparison.OrdinalIgnoreCase);
+        MeaningVerdict verdict = reportedPass && issues.Length == 0 ? MeaningVerdict.Pass : MeaningVerdict.Fail;
+        if (string.IsNullOrWhiteSpace(explanation))
+        {
+            explanation = reportedPass && issues.Length > 0
+                ? "Reported pass with material issues; normalized to fail."
+                : verdict == MeaningVerdict.Pass ? "Meaning preserved." : "Material meaning divergence.";
+        }
+
+        return (verdict, issues, explanation);
     }
 
     private static string[] ParseIssues(JsonElement root)

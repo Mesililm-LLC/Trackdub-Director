@@ -207,6 +207,7 @@ describe("App smoke", () => {
     expect(within(seg2).queryByText("Meaning: Not checked")).not.toBeInTheDocument();
     // The early failing attempt is still visible inside the attempt details.
     expect(within(seg2).getByText("Not checked")).toBeInTheDocument();
+    expect(within(seg2).getByText(/Meaning gate \(attempt #2\): model muse-spark-1\.1.*template meaning-v1.*2026-10-28T00:00:00Z/)).toBeInTheDocument();
   });
 
   it("shows Not checked for a segment whose final attempt failed timing", async () => {

@@ -61,42 +61,38 @@ public sealed class QaServiceTests
             capturedBodies?.Add(body);
             Assert.Contains("/chat/completions", request.RequestUri?.ToString() ?? string.Empty);
 
-            bool isMeaning = body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal);
-
-            if (isMeaning)
+            if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
-                if (meaningExceptions is not null && meaningExceptions.Count > 0)
-                {
-                    Exception ex = meaningExceptions.Dequeue();
-                    // Simulate transport failure by throwing
-                    throw ex;
-                }
-
-                if (meaningJsons.Count == 0)
-                {
-                    throw new InvalidOperationException("No more canned meaning JSON queued.");
-                }
-
-                string meaningJson = meaningJsons.Dequeue();
-                return ChatResponse(modelId, meaningJson, meaningPrompt, meaningComp);
+                return MeaningResponse();
             }
-            else
+
+            if (body.Contains("Revise", StringComparison.Ordinal))
             {
-                // Check revision body inspection if needed
-                if (body.Contains("Revise", StringComparison.Ordinal) && inspectRevisionBody is not null)
-                {
-                    inspectRevisionBody(body);
-                }
-
-                if (translations.Count == 0)
-                {
-                    throw new InvalidOperationException("No more canned translations queued.");
-                }
-
-                string translation = translations.Dequeue();
-                return ChatResponse(modelId, translation, transPrompt, transComp);
+                inspectRevisionBody?.Invoke(body);
             }
+
+            if (translations.Count == 0)
+            {
+                throw new InvalidOperationException("No more canned translations queued.");
+            }
+
+            return ChatResponse(modelId, translations.Dequeue(), transPrompt, transComp);
         });
+
+        HttpResponseMessage MeaningResponse()
+        {
+            if (meaningExceptions is { Count: > 0 })
+            {
+                throw meaningExceptions.Dequeue();
+            }
+
+            if (meaningJsons.Count == 0)
+            {
+                throw new InvalidOperationException("No more canned meaning JSON queued.");
+            }
+
+            return ChatResponse(modelId, meaningJsons.Dequeue(), meaningPrompt, meaningComp);
+        }
     }
 
     private static HttpMessageHandler SequencedHandler(
