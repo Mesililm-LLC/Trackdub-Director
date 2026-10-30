@@ -25,6 +25,7 @@ public sealed class DirectorAdaptationServiceTests
         public int MeaningCalls;
         public List<string> AdaptationBodies = [];
         public string AdaptationContent = AdaptedInformal;
+        public string AdaptationFinishReason = "stop";
         public string MeaningContent = """{"verdict":"pass","issues":[],"explanation":"Meaning preserved."}""";
         public bool MeaningTransportsError;
 
@@ -38,7 +39,7 @@ public sealed class DirectorAdaptationServiceTests
             {
                 AdaptationCalls++;
                 AdaptationBodies.Add(body);
-                return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12);
+                return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12, finishReason: AdaptationFinishReason);
             }
 
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
@@ -59,7 +60,7 @@ public sealed class DirectorAdaptationServiceTests
         }
     }
 
-    private static HttpResponseMessage ChatOk(string content, int promptTokens, int completionTokens, int? reasoningTokens)
+    private static HttpResponseMessage ChatOk(string content, int promptTokens, int completionTokens, int? reasoningTokens, string finishReason = "stop")
     {
         var payload = new
         {
@@ -67,7 +68,7 @@ public sealed class DirectorAdaptationServiceTests
             @object = "chat.completion",
             created = 1793261234L,
             model = "muse-spark-1.1",
-            choices = new[] { new { index = 0, finish_reason = "stop", message = new { role = "assistant", content, refusal = (string?)null } } },
+            choices = new[] { new { index = 0, finish_reason = finishReason, message = new { role = "assistant", content, refusal = (string?)null } } },
             usage = new
             {
                 prompt_tokens = promptTokens,
@@ -403,6 +404,48 @@ public sealed class DirectorAdaptationServiceTests
         Assert.Equal(MeaningVerdict.Pass, result.Meaning.Verdict);
         Assert.Equal(1, stub.AdaptationCalls);
         Assert.Equal(1, stub.MeaningCalls);
+    }
+
+    [Fact]
+    public async Task TruncatedCompletion_FailsClosedWithUsageRecorded()
+    {
+        // A finish_reason of "length" is not an adapted line: even a short
+        // prefix that would pass both gates must not report Passed.
+        var stub = new LaneStub { AdaptationContent = "Una toma.", AdaptationFinishReason = "length" };
+        (DirectorAdaptationService service, IDisposable scope) = BuildService(stub);
+        using var _ = scope;
+
+        DirectorAdaptationBatch batch = await service.RunAsync([OptedIn(durationSeconds: 4.0)], "en", "es");
+
+        DirectorAdaptationSegmentResult result = Assert.Single(batch.Segments);
+        Assert.Equal(DirectorAdaptationStatus.Failed, result.Status);
+        Assert.Null(result.AdaptedTranslation);
+        Assert.Null(result.TimingVerdict);
+        Assert.Null(result.Meaning);
+        Assert.NotNull(result.Error);
+        Assert.Contains("length", result.Error, StringComparison.Ordinal);
+        Assert.NotNull(result.Usage);
+        Assert.Equal(160, result.Usage.TotalTokens);
+        Assert.Equal(1, stub.AdaptationCalls);
+        Assert.Equal(0, stub.MeaningCalls);
+    }
+
+    [Fact]
+    public async Task NullSegmentEntry_FailsTheLoaderWithADiagnostic()
+    {
+        const string json = """[null]""";
+        string tmp = Path.Combine(Path.GetTempPath(), $"director-b2-null-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(tmp, json);
+        try
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => DirectorAdaptationService.LoadSegmentsAsync(tmp));
+            Assert.Contains("index 0", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
     }
 
     [Fact]

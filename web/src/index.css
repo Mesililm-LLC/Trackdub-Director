@@ -121,5 +121,6 @@ a { color: #8ab4ff; }
 }
 .footer-sep { opacity: 0.5; }
 
-.director-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.director-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.director-grid .line-translation { overflow-wrap: anywhere; }
 .director-label { color: var(--muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }

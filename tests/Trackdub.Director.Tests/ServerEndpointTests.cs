@@ -741,6 +741,33 @@ public sealed class ServerEndpointTests
     }
 
     [Fact]
+    public async Task DirectorAdaptation_rejects_duplicate_segment_ids()
+    {
+        using var auth = FakeAuth();
+        int calls = 0;
+        var handler = new DelegatingHandlerStub((request, cancellationToken) =>
+        {
+            calls++;
+            return Task.FromResult(ChatOk("muse-spark-1.1", "x", 1, 1));
+        });
+        using var factory = new ServerFactory(handler);
+        using HttpClient client = factory.CreateClient();
+
+        var requestBody = new
+        {
+            segments = new[]
+            {
+                new { id = "seg-008", text = "a", translation = "b", director_adaptation = new { target_register = "formal" } },
+                new { id = "seg-008", text = "c", translation = "d", director_adaptation = new { target_register = "informal" } },
+            },
+        };
+
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/director-adaptation", requestBody);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task Models_returns_account_models()
     {
         using var auth = FakeAuth();

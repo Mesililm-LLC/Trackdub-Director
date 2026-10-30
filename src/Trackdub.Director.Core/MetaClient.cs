@@ -364,8 +364,10 @@ public sealed class MetaClient : IDisposable
             JsonSerializer.Serialize(payload, JsonOptions));
         string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
         ChatCompletionResponse? parsed = ParseChatResponse(new BodyText(body));
-        string content = parsed?.Choices?.FirstOrDefault()?.Message?.Content?.Trim() ?? string.Empty;
-        return new AdaptationCompletionResult(content, resolvedModel, parsed?.Model ?? resolvedModel, ToUsageDetail(parsed?.Usage));
+        ChatChoice? firstChoice = parsed?.Choices?.FirstOrDefault();
+        string content = firstChoice?.Message?.Content?.Trim() ?? string.Empty;
+        return new AdaptationCompletionResult(
+            content, resolvedModel, parsed?.Model ?? resolvedModel, ToUsageDetail(parsed?.Usage), firstChoice?.FinishReason);
     }
 
     private static string ValidateImageUrl(string frameImageDataUrl)
@@ -782,7 +784,8 @@ public sealed class MetaClient : IDisposable
         string Content,
         string RequestedModel,
         string Model,
-        TokenUsageDetail? Usage);
+        TokenUsageDetail? Usage,
+        string? FinishReason = null);
 
     public sealed record AdaptationRequest(
         string SystemPrompt,

@@ -314,6 +314,11 @@ app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient c
         return Results.BadRequest(new { error = "Each segment must have a non-empty 'id'." });
     }
 
+    if (req.Segments.Select(s => s!.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != req.Segments.Count)
+    {
+        return Results.BadRequest(new { error = "Duplicate segment ids are not allowed." });
+    }
+
     if (req.Segments.Count > MaxAdaptationSegments)
     {
         return Results.BadRequest(new { error = $"At most {MaxAdaptationSegments} segments are allowed per request." });

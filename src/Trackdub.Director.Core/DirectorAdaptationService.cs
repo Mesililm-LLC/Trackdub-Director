@@ -175,6 +175,7 @@ public sealed class DirectorAdaptationService
         AdaptationRunContext run,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(segment);
         ArgumentException.ThrowIfNullOrWhiteSpace(segment.Id);
 
         if (segment.DirectorAdaptation is null)
@@ -235,6 +236,21 @@ public sealed class DirectorAdaptationService
         {
             return Failed(segment, normalized, ex.Message, fieldsUsed,
                 new TranslationProvenance(MetaAuth.GetModel(), run.EndpointHost, DateTime.UtcNow.ToString("O"), PromptTemplateVersion));
+        }
+
+        // A truncated completion (finish_reason "length") is not an adapted line:
+        // fail closed before the gates can pass a prefix.
+        if (!string.Equals(response.FinishReason, "stop", StringComparison.OrdinalIgnoreCase))
+        {
+            string reason = string.IsNullOrWhiteSpace(response.FinishReason) ? "(missing)" : $"'{response.FinishReason.Trim()}'";
+            return Failed(segment, normalized,
+                $"Incomplete adaptation response (finish_reason: {reason}); failing closed.",
+                fieldsUsed,
+                new TranslationProvenance(response.Model, run.EndpointHost, DateTime.UtcNow.ToString("O"), PromptTemplateVersion),
+                response.Usage is null ? null : new DirectorAdaptationUsage(
+                    response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.TotalTokens,
+                    response.Usage.ReasoningTokens, response.Usage.CachedTokens),
+                rawContent: response.Content);
         }
 
         var provenance = new TranslationProvenance(
@@ -415,6 +431,11 @@ public sealed class DirectorAdaptationService
 
         for (int i = 0; i < segments.Length; i++)
         {
+            if (segments[i] is null)
+            {
+                throw new InvalidOperationException($"Segment at index {i} is null.");
+            }
+
             if (string.IsNullOrWhiteSpace(segments[i].Id))
             {
                 throw new InvalidOperationException($"Segment at index {i} has no id.");
