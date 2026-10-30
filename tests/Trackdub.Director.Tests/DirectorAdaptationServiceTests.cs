@@ -28,6 +28,7 @@ public sealed class DirectorAdaptationServiceTests
         public string AdaptationFinishReason = "stop";
         public string MeaningContent = """{"verdict":"pass","issues":[],"explanation":"Meaning preserved."}""";
         public bool MeaningTransportsError;
+        public bool AdaptationTransportsError;
 
         public async Task<HttpResponseMessage> HandleAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -39,6 +40,14 @@ public sealed class DirectorAdaptationServiceTests
             {
                 AdaptationCalls++;
                 AdaptationBodies.Add(body);
+                if (AdaptationTransportsError)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                    {
+                        Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
+                    };
+                }
+
                 return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12, finishReason: AdaptationFinishReason);
             }
 
@@ -465,5 +474,22 @@ public sealed class DirectorAdaptationServiceTests
         Assert.Equal(0, result.Meaning.Usage.TotalTokens);
         Assert.Equal(1, stub.AdaptationCalls);
         Assert.Equal(1, stub.MeaningCalls);
+    }
+
+    [Fact]
+    public async Task AdaptationTransportError_FailsTheSegmentWithoutRunningTheMeaningGate()
+    {
+        var stub = new LaneStub { AdaptationTransportsError = true };
+        (DirectorAdaptationService service, IDisposable scope) = BuildService(stub);
+        using var _ = scope;
+
+        DirectorAdaptationBatch batch = await service.RunAsync([OptedIn()], "en", "es");
+
+        DirectorAdaptationSegmentResult result = Assert.Single(batch.Segments);
+        Assert.Equal(DirectorAdaptationStatus.Failed, result.Status);
+        Assert.NotNull(result.Error);
+        Assert.Contains("HTTP 500", result.Error, StringComparison.Ordinal);
+        Assert.Equal(1, stub.AdaptationCalls);
+        Assert.Equal(0, stub.MeaningCalls);
     }
 }
