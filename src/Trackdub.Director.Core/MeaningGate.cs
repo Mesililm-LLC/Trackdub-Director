@@ -113,19 +113,9 @@ public static class MeaningGate
                 throw new JsonException("Meaning response must be a JSON object.");
             }
 
-            string? verdictRaw = null;
-            if (root.TryGetProperty("verdict", out JsonElement vEl))
-            {
-                verdictRaw = vEl.ValueKind == JsonValueKind.String ? vEl.GetString() : null;
-            }
-
+            string? verdictRaw = ReadStringProperty(root, "verdict");
             string[] issues = ParseIssues(root);
-
-            string explanation = string.Empty;
-            if (root.TryGetProperty("explanation", out JsonElement expEl) && expEl.ValueKind == JsonValueKind.String)
-            {
-                explanation = expEl.GetString()?.Trim() ?? string.Empty;
-            }
+            string explanation = ReadStringProperty(root, "explanation")?.Trim() ?? string.Empty;
 
             (MeaningVerdict verdict, issues, explanation) = NormalizeVerdict(verdictRaw, issues, explanation);
 
@@ -139,6 +129,11 @@ public static class MeaningGate
         }
     }
 
+    private static string? ReadStringProperty(JsonElement root, string name)
+    {
+        return root.TryGetProperty(name, out JsonElement el) && el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+    }
+
     private static (MeaningVerdict Verdict, string[] Issues, string Explanation) NormalizeVerdict(
         string? rawVerdict, string[] issues, string explanation)
     {
@@ -146,19 +141,24 @@ public static class MeaningGate
         {
             return (MeaningVerdict.Fail,
                 issues.Length > 0 ? issues : ["unparseable verdict"],
-                string.IsNullOrWhiteSpace(explanation) ? "Model returned no verdict; failing closed." : explanation);
+                DefaultIfBlank(explanation, "Model returned no verdict; failing closed."));
         }
 
         bool reportedPass = string.Equals(rawVerdict.Trim(), "pass", StringComparison.OrdinalIgnoreCase);
         MeaningVerdict verdict = reportedPass && issues.Length == 0 ? MeaningVerdict.Pass : MeaningVerdict.Fail;
-        if (string.IsNullOrWhiteSpace(explanation))
+        return (verdict, issues, DefaultIfBlank(explanation, NormalizedExplanation(reportedPass, verdict, issues)));
+    }
+
+    private static string DefaultIfBlank(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
+
+    private static string NormalizedExplanation(bool reportedPass, MeaningVerdict verdict, string[] issues)
+    {
+        if (reportedPass && issues.Length > 0)
         {
-            explanation = reportedPass && issues.Length > 0
-                ? "Reported pass with material issues; normalized to fail."
-                : verdict == MeaningVerdict.Pass ? "Meaning preserved." : "Material meaning divergence.";
+            return "Reported pass with material issues; normalized to fail.";
         }
 
-        return (verdict, issues, explanation);
+        return verdict == MeaningVerdict.Pass ? "Meaning preserved." : "Material meaning divergence.";
     }
 
     private static string[] ParseIssues(JsonElement root)
@@ -222,6 +222,15 @@ public static class MeaningGate
             return null;
         }
 
+        int end = FindObjectEnd(content, start);
+
+        // Unbalanced when end is -1: let the caller's parser fail closed.
+        return end < 0 ? null : content[start..end];
+    }
+
+    // Returns the index just past the '}' that closes the object opened at start, or -1 if it never closes.
+    private static int FindObjectEnd(string content, int start)
+    {
         int depth = 0;
         bool inString = false;
         bool escaped = false;
@@ -230,47 +239,42 @@ public static class MeaningGate
         {
             char c = content[i];
 
-            if (escaped)
-            {
-                escaped = false;
-                continue;
-            }
-
             if (inString)
             {
-                if (c == '\\')
-                {
-                    escaped = true;
-                }
-                else if (c == '"')
-                {
-                    inString = false;
-                }
-
-                continue;
+                ConsumeStringChar(c, ref inString, ref escaped);
             }
-
-            switch (c)
+            else if (c == '"')
             {
-                case '"':
-                    inString = true;
-                    break;
-                case '{':
-                    depth++;
-                    break;
-                case '}':
-                    depth--;
-                    if (depth == 0)
-                    {
-                        return content[start..(i + 1)];
-                    }
-
-                    break;
+                inString = true;
+            }
+            else if (c == '{')
+            {
+                depth++;
+            }
+            else if (c == '}' && --depth == 0)
+            {
+                return i + 1;
             }
         }
 
-        // Unbalanced: let the caller's parser fail closed.
-        return null;
+        return -1;
+    }
+
+    // Tracks the end of a string literal, skipping the character after a backslash.
+    private static void ConsumeStringChar(char c, ref bool inString, ref bool escaped)
+    {
+        if (escaped)
+        {
+            escaped = false;
+        }
+        else if (c == '\\')
+        {
+            escaped = true;
+        }
+        else if (c == '"')
+        {
+            inString = false;
+        }
     }
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..(n - 3)] + "...";

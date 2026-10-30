@@ -781,4 +781,172 @@ public sealed class ServerEndpointTests
         using JsonDocument doc = JsonDocument.Parse(json);
         AssertModels(doc.RootElement);
     }
+
+    private static HttpResponseMessage UpstreamError(HttpStatusCode status) => new(status)
+    {
+        Content = new StringContent("{\"error\":\"upstream failure\"}", Encoding.UTF8, "application/json"),
+    };
+
+    private static async Task<(HttpStatusCode Status, JsonElement Root)> PostRawAsync(HttpClient client, string path, string body)
+    {
+        HttpResponseMessage resp = await client.PostAsync(path, new StringContent(body, Encoding.UTF8, "application/json"));
+        string json = await resp.Content.ReadAsStringAsync();
+        using JsonDocument doc = JsonDocument.Parse(json);
+        return (resp.StatusCode, doc.RootElement.Clone());
+    }
+
+    private static string ErrorOf(JsonElement root) => root.GetProperty("error").GetString()!;
+
+    [Fact]
+    public async Task Models_upstream_server_error_maps_to_502()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage resp = await client.GetAsync("/api/models");
+
+        Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Models_upstream_unauthorized_maps_to_401()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.Unauthorized))));
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage resp = await client.GetAsync("/api/models");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unknown_api_route_returns_json_404()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))));
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage resp = await client.GetAsync("/api/does-not-exist");
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        Assert.Equal("Not found", ErrorOf(JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement));
+    }
+
+    private static string Segments(int count)
+    {
+        return "{\"segments\":[" + string.Join(",", Enumerable.Range(0, count).Select(i => $"{{\"id\":\"s{i}\"}}")) + "]}";
+    }
+
+    public static IEnumerable<object[]> MalformedRequests()
+    {
+        const string nineConcepts = "{\"segments\":[{\"id\":\"a\",\"concepts\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\"]}]}";
+
+        yield return new object[] { "/api/translate", "{not json", "Invalid JSON:" };
+        yield return new object[] { "/api/translate", "\"hello\"", "Request body must be a JSON object with 'segments' or a JSON array of segments." };
+        yield return new object[] { "/api/translate", "{}", "Request must include a non-empty 'segments' array." };
+        yield return new object[] { "/api/translate", "{\"segments\":[]}", "Request must include a non-empty 'segments' array of { id, text, duration_seconds? }." };
+        yield return new object[] { "/api/translate", "{\"segments\":[{\"id\":\"  \",\"text\":\"Hi\"}]}", "Each segment must have a non-empty 'id' and 'text'." };
+
+        yield return new object[] { "/api/qa", "{not json", "Invalid JSON:" };
+        yield return new object[] { "/api/qa", "{}", "Request must include a non-empty 'segments' array." };
+        yield return new object[] { "/api/qa", "{\"segments\":[]}", "Request must include a non-empty 'segments' array of { id, text, duration_seconds? }." };
+
+        yield return new object[] { "/api/scene-context", "{not json", "Invalid JSON:" };
+        yield return new object[] { "/api/scene-context", "{\"segments\":[]}", "Request must include a non-empty 'segments' array of { id, text?, frame_image_data_url?, concepts?, speaker_id?, speaker_label?, frame_id?, timecode_seconds?, frame_sha256?, vision_enrichment? }." };
+        yield return new object[] { "/api/scene-context", "{\"segments\":[{\"id\":\" \"}]}", "Each segment must have a non-empty 'id'." };
+        yield return new object[] { "/api/scene-context", Segments(101), "At most 100 segments are allowed per request." };
+        yield return new object[] { "/api/scene-context", nineConcepts, "At most 8 concepts are allowed per segment." };
+
+        yield return new object[] { "/api/director-adaptation", "{not json", "Invalid JSON:" };
+        yield return new object[] { "/api/director-adaptation", "{\"segments\":[]}", "Request must include a non-empty 'segments' array of { id, text?, translation?, duration_seconds?, context?, director_adaptation? }." };
+        yield return new object[] { "/api/director-adaptation", "{\"segments\":[{\"id\":\"\"}]}", "Each segment must have a non-empty 'id'." };
+        yield return new object[] { "/api/director-adaptation", Segments(101), "At most 100 segments are allowed per request." };
+    }
+
+    [Theory]
+    [MemberData(nameof(MalformedRequests))]
+    public async Task Endpoint_rejects_malformed_request_with_bad_request(string path, string body, string expectedError)
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, path, body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith(expectedError, ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task Translate_accepts_a_raw_segment_array_body()
+    {
+        using var auth = FakeAuth();
+        var q = new Queue<string>(["Hola."]);
+        using var factory = new ServerFactory(DualHandler(q, new Queue<string>(), new ChatStubOptions()));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/translate", "[{\"id\":\"seg-001\",\"text\":\"Hello.\"}]");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(1, root.GetProperty("segments").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Translate_rejects_non_string_language_value()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, _) = await PostRawAsync(client, "/api/translate", "{\"segments\":[{\"id\":\"a\",\"text\":\"Hi\"}],\"sourceLanguage\":5}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+    }
+
+    [Theory]
+    [InlineData("\"maxAttempts\":-1", "maxAttempts must be >= 0.")]
+    [InlineData("\"toleranceFraction\":-0.1", "toleranceFraction must be >= 0.")]
+    [InlineData("\"targetCharactersPerSecond\":0", "targetCharactersPerSecond must be > 0.")]
+    [InlineData("\"reasoningEffort\":\"turbo\"", "reasoningEffort must be low, medium, or high.")]
+    public async Task Qa_rejects_invalid_options_before_any_model_call(string optionJson, string expectedError)
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string body = "{\"segments\":[{\"id\":\"a\",\"text\":\"Hi\",\"duration_seconds\":1.0}],\"sourceLanguage\":\"en\",\"targetLanguage\":\"es\",\"options\":{" + optionJson + "}}";
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/qa", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal(expectedError, ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_reports_frame_hash_mismatch_without_calling_the_model()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string body = "{\"segments\":[{\"id\":\"a\",\"frame_image_data_url\":\"data:image/png;base64,iVBORw0KGgo=\",\"frame_sha256\":\"" + new string('0', 64) + "\"}]}";
+
+        HttpResponseMessage resp = await client.PostAsync("/api/scene-context", new StringContent(body, Encoding.UTF8, "application/json"));
+        string json = await resp.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Contains("Frame SHA-256 mismatch", json);
+    }
+
+    [Fact]
+    public async Task SceneContext_accepts_a_raw_segment_array_without_frames()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, _) = await PostRawAsync(client, "/api/scene-context", "[{\"id\":\"a\",\"text\":\"Hi\"}]");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+    }
 }

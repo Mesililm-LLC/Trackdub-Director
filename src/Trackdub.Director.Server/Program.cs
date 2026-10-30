@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Trackdub.Director.Core;
@@ -83,7 +84,7 @@ app.MapPost("/api/translate", async (HttpRequest request, TranslationService tra
         return Results.BadRequest(new { error = ex.Message });
     }
 
-    if (req is null || req.Segments is null || req.Segments.Count == 0)
+    if (req?.Segments is not { Count: > 0 })
     {
         return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text, duration_seconds? }." });
     }
@@ -93,8 +94,8 @@ app.MapPost("/api/translate", async (HttpRequest request, TranslationService tra
         return Results.BadRequest(new { error = "Each segment must have a non-empty 'id' and 'text'." });
     }
 
-    string from = string.IsNullOrWhiteSpace(req.SourceLanguage) ? "en" : req.SourceLanguage.Trim();
-    string to = string.IsNullOrWhiteSpace(req.TargetLanguage) ? "es" : req.TargetLanguage.Trim();
+    string from = ResolveLanguage(req.SourceLanguage, "en");
+    string to = ResolveLanguage(req.TargetLanguage, "es");
 
     try
     {
@@ -127,101 +128,31 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
         return Results.BadRequest(new { error = ex.Message });
     }
 
-    if (req is null || req.Segments is null || req.Segments.Count == 0)
+    if (req?.Segments is not { Count: > 0 })
     {
         return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text, duration_seconds? }." });
     }
 
-    string from = string.IsNullOrWhiteSpace(req.SourceLanguage) ? "en" : req.SourceLanguage.Trim();
-    string to = string.IsNullOrWhiteSpace(req.TargetLanguage) ? "es" : req.TargetLanguage.Trim();
+    string from = ResolveLanguage(req.SourceLanguage, "en");
+    string to = ResolveLanguage(req.TargetLanguage, "es");
 
-    // Build QaOptions: request overrides > env defaults, same precedence the CLI uses.
-    QaOptions env = QaOptions.FromEnvironment();
-    var cpsOverrides = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-    foreach (var kv in env.CharactersPerSecondByLanguage)
+    if (!TryBuildQaOptions(req, to, out QaOptions? options, out string? error))
     {
-        cpsOverrides[kv.Key] = kv.Value;
+        return Results.BadRequest(new { error });
     }
 
-    int maxAttempts = req.Options?.MaxAttempts ?? env.MaxAttempts;
-    double tolerance = req.Options?.ToleranceFraction ?? env.ToleranceFraction;
-    double? cps = req.Options?.TargetCharactersPerSecond;
-    string? reasoningEffort = req.Options?.ReasoningEffort ?? env.ReasoningEffort;
-
-    if (maxAttempts < 0)
-    {
-        return Results.BadRequest(new { error = "maxAttempts must be >= 0." });
-    }
-
-    if (tolerance < 0)
-    {
-        return Results.BadRequest(new { error = "toleranceFraction must be >= 0." });
-    }
-
-    if (cps.HasValue)
-    {
-        if (cps.Value <= 0)
-        {
-            return Results.BadRequest(new { error = "targetCharactersPerSecond must be > 0." });
-        }
-
-        cpsOverrides[to.ToLowerInvariant()] = cps.Value;
-    }
-
-    if (reasoningEffort is not null)
-    {
-        string v = reasoningEffort.Trim().ToLowerInvariant();
-        if (v is not ("low" or "medium" or "high"))
-        {
-            return Results.BadRequest(new { error = "reasoningEffort must be low, medium, or high." });
-        }
-
-        reasoningEffort = v;
-    }
-
-    var options = new QaOptions
-    {
-        MaxAttempts = maxAttempts,
-        ToleranceFraction = tolerance,
-        CharactersPerSecondByLanguage = cpsOverrides,
-        ReasoningEffort = reasoningEffort,
-    };
-
-    // Inject reasoning_effort into env for the MetaClient call path (MetaAuth reads it).
-    // Do not mutate process env globally; instead temporarily set for this request scope via a helper.
-    // MetaClient reads MetaAuth.GetReasoningEffort() at call time, so we need to make it visible.
-    // Easiest: set env var for duration of request, restore after. Single-process server so this is racy under concurrency,
-    // so we instead rely on the fact that MetaClient uses the process env at call time and we have just set options.
-    // To avoid cross-request pollution we explicitly set/restore around the run.
+    // MetaClient reads the reasoning effort from the process env at call time, so set it for this run and restore after.
     string? prevReasoning = Environment.GetEnvironmentVariable(MetaAuth.ReasoningEffortEnv);
     bool didSetReasoning = false;
-    if (reasoningEffort is not null && !string.Equals(prevReasoning, reasoningEffort, StringComparison.OrdinalIgnoreCase))
+    if (options.ReasoningEffort is not null && !string.Equals(prevReasoning, options.ReasoningEffort, StringComparison.OrdinalIgnoreCase))
     {
-        Environment.SetEnvironmentVariable(MetaAuth.ReasoningEffortEnv, reasoningEffort);
+        Environment.SetEnvironmentVariable(MetaAuth.ReasoningEffortEnv, options.ReasoningEffort);
         didSetReasoning = true;
     }
 
     try
     {
-        var qaService = new QaService(client, options);
-
-        // Convert to QaService's input shape (already matches)
-        IReadOnlyList<QaSegmentInput> segments = req.Segments.Select(s => new QaSegmentInput(s.Id, s.Text, s.DurationSeconds)).ToArray();
-
-        QaReport report = await qaService.RunAsync(segments, from, to, ct).ConfigureAwait(false);
-        return Results.Json(report);
-    }
-    catch (MetaApiException ex)
-    {
-        return MapMetaException(ex);
-    }
-    catch (ArgumentOutOfRangeException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
+        return await RunQaAsync(client, options, req, from, to, ct).ConfigureAwait(false);
     }
     finally
     {
@@ -231,10 +162,6 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
         }
     }
 });
-const int MaxSceneSegments = 100;
-const int MaxConceptsPerSegment = 8;
-
-
 app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextService sceneService, CancellationToken ct) =>
 {
     SceneSegmentInput[]? segments;
@@ -256,19 +183,10 @@ app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextServic
         return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, frame_image_data_url?, concepts?, speaker_id?, speaker_label?, frame_id?, timecode_seconds?, frame_sha256?, vision_enrichment? }." });
     }
 
-    if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
+    string? validationError = ValidateSceneSegments(segments);
+    if (validationError is not null)
     {
-        return Results.BadRequest(new { error = "Each segment must have a non-empty 'id'." });
-    }
-
-    if (segments.Length > MaxSceneSegments)
-    {
-        return Results.BadRequest(new { error = $"At most {MaxSceneSegments} segments are allowed per request." });
-    }
-
-    if (segments.Any(s => (s.Concepts?.Count(c => !string.IsNullOrWhiteSpace(c)) ?? 0) > MaxConceptsPerSegment))
-    {
-        return Results.BadRequest(new { error = $"At most {MaxConceptsPerSegment} concepts are allowed per segment." });
+        return Results.BadRequest(new { error = validationError });
     }
 
     try
@@ -285,8 +203,6 @@ app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextServic
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-
-const int MaxAdaptationSegments = 100;
 
 app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient client, CancellationToken ct) =>
 {
@@ -309,23 +225,14 @@ app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient c
         return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, translation?, duration_seconds?, context?, director_adaptation? }." });
     }
 
-    if (req.Segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
+    string? validationError = ValidateAdaptationSegments(req.Segments);
+    if (validationError is not null)
     {
-        return Results.BadRequest(new { error = "Each segment must have a non-empty 'id'." });
+        return Results.BadRequest(new { error = validationError });
     }
 
-    if (req.Segments.Select(s => s!.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != req.Segments.Count)
-    {
-        return Results.BadRequest(new { error = "Duplicate segment ids are not allowed." });
-    }
-
-    if (req.Segments.Count > MaxAdaptationSegments)
-    {
-        return Results.BadRequest(new { error = $"At most {MaxAdaptationSegments} segments are allowed per request." });
-    }
-
-    string from = string.IsNullOrWhiteSpace(req.SourceLanguage) ? "en" : req.SourceLanguage.Trim();
-    string to = string.IsNullOrWhiteSpace(req.TargetLanguage) ? "es" : req.TargetLanguage.Trim();
+    string from = ResolveLanguage(req.SourceLanguage, "en");
+    string to = ResolveLanguage(req.TargetLanguage, "es");
 
     try
     {
@@ -420,13 +327,7 @@ public partial class Program
         // Accept either { segments: [...] } wrapper or raw [...] array
         if (root.ValueKind == JsonValueKind.Array)
         {
-            var arr = JsonSerializer.Deserialize<TranslationSegmentInput[]>(root.GetRawText(), JsonOptionsWeb);
-            if (arr is null)
-            {
-                throw new InvalidOperationException("Invalid segments array.");
-            }
-
-            return new TranslateRequest(arr, null, null);
+            return new TranslateRequest(DeserializeTranslationSegments(root, "Invalid segments array."), null, null);
         }
 
         if (root.ValueKind != JsonValueKind.Object)
@@ -437,39 +338,21 @@ public partial class Program
         // Try wrapper
         if (root.TryGetProperty("segments", out JsonElement segEl))
         {
-            var segments = JsonSerializer.Deserialize<TranslationSegmentInput[]>(segEl.GetRawText(), JsonOptionsWeb);
-            if (segments is null)
-            {
-                throw new InvalidOperationException("Invalid 'segments' array.");
-            }
-
-            string? from = root.TryGetProperty("sourceLanguage", out JsonElement fl) ? fl.GetString() : null;
-            if (from is null && root.TryGetProperty("source_language", out JsonElement fl2))
-            {
-                from = fl2.GetString();
-            }
-
-            if (from is null && root.TryGetProperty("from", out JsonElement fl3))
-            {
-                from = fl3.GetString();
-            }
-
-            string? to = root.TryGetProperty("targetLanguage", out JsonElement tl) ? tl.GetString() : null;
-            if (to is null && root.TryGetProperty("target_language", out JsonElement tl2))
-            {
-                to = tl2.GetString();
-            }
-
-            if (to is null && root.TryGetProperty("to", out JsonElement tl3))
-            {
-                to = tl3.GetString();
-            }
-
-            return new TranslateRequest(segments, from, to);
+            return new TranslateRequest(
+                DeserializeTranslationSegments(segEl, "Invalid 'segments' array."),
+                ReadFirst<string>(root, el => el.GetString(), "sourceLanguage", "source_language", "from"),
+                ReadFirst<string>(root, el => el.GetString(), "targetLanguage", "target_language", "to"));
         }
 
         // Maybe the client sent { id, text } without wrapper? Treat as error
         throw new InvalidOperationException("Request must include a non-empty 'segments' array.");
+    }
+
+    // Returns the value of the first alias that is present, even when that value is null.
+    private static string? ReadFirstPresentString(JsonElement root, params string[] names)
+    {
+        string? present = Array.Find(names, name => root.TryGetProperty(name, out _));
+        return present is null ? null : root.GetProperty(present).GetString();
     }
 
     private static async Task<QaApiRequest?> ReadQaRequestAsync(HttpRequest http, CancellationToken ct)
@@ -504,41 +387,150 @@ public partial class Program
             throw new InvalidOperationException("Invalid 'segments' array.");
         }
 
-        string? from = null;
-        if (root.TryGetProperty("sourceLanguage", out JsonElement fl)) from = fl.GetString();
-        else if (root.TryGetProperty("source_language", out JsonElement fl2)) from = fl2.GetString();
-        else if (root.TryGetProperty("from", out JsonElement fl3)) from = fl3.GetString();
-
-        string? to = null;
-        if (root.TryGetProperty("targetLanguage", out JsonElement tl)) to = tl.GetString();
-        else if (root.TryGetProperty("target_language", out JsonElement tl2)) to = tl2.GetString();
-        else if (root.TryGetProperty("to", out JsonElement tl3)) to = tl3.GetString();
+        string? from = ReadFirstPresentString(root, "sourceLanguage", "source_language", "from");
+        string? to = ReadFirstPresentString(root, "targetLanguage", "target_language", "to");
 
         QaOptionsDto? optionsDto = null;
         if (root.TryGetProperty("options", out JsonElement optEl) && optEl.ValueKind == JsonValueKind.Object)
         {
-            int? maxAttempts = null;
-            if (optEl.TryGetProperty("maxAttempts", out JsonElement ma) && ma.ValueKind == JsonValueKind.Number && ma.TryGetInt32(out int mav)) maxAttempts = mav;
-            else if (optEl.TryGetProperty("max_attempts", out JsonElement ma2) && ma2.ValueKind == JsonValueKind.Number && ma2.TryGetInt32(out int mav2)) maxAttempts = mav2;
-
-            double? tolerance = null;
-            if (optEl.TryGetProperty("toleranceFraction", out JsonElement tf) && tf.ValueKind == JsonValueKind.Number && tf.TryGetDouble(out double tfv)) tolerance = tfv;
-            else if (optEl.TryGetProperty("tolerance_fraction", out JsonElement tf2) && tf2.ValueKind == JsonValueKind.Number && tf2.TryGetDouble(out double tfv2)) tolerance = tfv2;
-            else if (optEl.TryGetProperty("tolerance", out JsonElement tf3) && tf3.ValueKind == JsonValueKind.Number && tf3.TryGetDouble(out double tfv3)) tolerance = tfv3;
-
-            double? cps = null;
-            if (optEl.TryGetProperty("targetCharactersPerSecond", out JsonElement c) && c.ValueKind == JsonValueKind.Number && c.TryGetDouble(out double cv)) cps = cv;
-            else if (optEl.TryGetProperty("target_cps", out JsonElement c2) && c2.ValueKind == JsonValueKind.Number && c2.TryGetDouble(out double cv2)) cps = cv2;
-            else if (optEl.TryGetProperty("cps", out JsonElement c3) && c3.ValueKind == JsonValueKind.Number && c3.TryGetDouble(out double cv3)) cps = cv3;
-
-            string? reasoning = null;
-            if (optEl.TryGetProperty("reasoningEffort", out JsonElement re) && re.ValueKind == JsonValueKind.String) reasoning = re.GetString();
-            else if (optEl.TryGetProperty("reasoning_effort", out JsonElement re2) && re2.ValueKind == JsonValueKind.String) reasoning = re2.GetString();
-
-            optionsDto = new QaOptionsDto(maxAttempts, tolerance, cps, reasoning);
+            optionsDto = ReadQaOptions(optEl);
         }
 
         return new QaApiRequest(segments, from, to, optionsDto);
+    }
+
+    private static QaOptionsDto ReadQaOptions(JsonElement optEl) => new(
+        ReadFirst<int?>(optEl, el => el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out int v) ? v : null, "maxAttempts", "max_attempts"),
+        ReadFirst<double?>(optEl, el => el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out double v) ? v : null, "toleranceFraction", "tolerance_fraction", "tolerance"),
+        ReadFirst<double?>(optEl, el => el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out double v) ? v : null, "targetCharactersPerSecond", "target_cps", "cps"),
+        ReadFirst<string>(optEl, el => el.ValueKind == JsonValueKind.String ? el.GetString() : null, "reasoningEffort", "reasoning_effort"));
+
+    private static TranslationSegmentInput[] DeserializeTranslationSegments(JsonElement element, string errorMessage)
+    {
+        return JsonSerializer.Deserialize<TranslationSegmentInput[]>(element.GetRawText(), JsonOptionsWeb)
+            ?? throw new InvalidOperationException(errorMessage);
+    }
+
+    // Returns the first alias whose value converts to T; aliases that are missing or fail to convert are skipped.
+    private static T? ReadFirst<T>(JsonElement obj, Func<JsonElement, T?> convert, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (obj.TryGetProperty(name, out JsonElement el) && convert(el) is { } value)
+            {
+                return value;
+            }
+        }
+
+        return default;
+    }
+
+    // Builds QaOptions with request overrides > env defaults, same precedence the CLI uses.
+    private static bool TryBuildQaOptions(QaApiRequest req, string to, [NotNullWhen(true)] out QaOptions? options, [NotNullWhen(false)] out string? error)
+    {
+        options = null;
+        error = null;
+
+        QaOptions env = QaOptions.FromEnvironment();
+        int maxAttempts = req.Options?.MaxAttempts ?? env.MaxAttempts;
+        double tolerance = req.Options?.ToleranceFraction ?? env.ToleranceFraction;
+        double? cps = req.Options?.TargetCharactersPerSecond;
+        string? reasoningEffort = req.Options?.ReasoningEffort ?? env.ReasoningEffort;
+
+        error = ValidateQaOptionValues(maxAttempts, tolerance, cps);
+        if (error is not null)
+        {
+            return false;
+        }
+
+        if (reasoningEffort is not null)
+        {
+            reasoningEffort = NormalizeReasoningEffort(reasoningEffort);
+            if (reasoningEffort is null)
+            {
+                error = "reasoningEffort must be low, medium, or high.";
+                return false;
+            }
+        }
+
+        options = new QaOptions
+        {
+            MaxAttempts = maxAttempts,
+            ToleranceFraction = tolerance,
+            CharactersPerSecondByLanguage = BuildCpsOverrides(env, to, cps),
+            ReasoningEffort = reasoningEffort,
+        };
+        return true;
+    }
+
+    private static string? ValidateQaOptionValues(int maxAttempts, double tolerance, double? cps)
+    {
+        if (maxAttempts < 0)
+        {
+            return "maxAttempts must be >= 0.";
+        }
+
+        if (tolerance < 0)
+        {
+            return "toleranceFraction must be >= 0.";
+        }
+
+        if (cps is <= 0.0)
+        {
+            return "targetCharactersPerSecond must be > 0.";
+        }
+
+        return null;
+    }
+
+    // Copies the env CPS defaults, then applies the request's CPS for the target language when one was given.
+    private static Dictionary<string, double> BuildCpsOverrides(QaOptions env, string to, double? cps)
+    {
+        var overrides = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in env.CharactersPerSecondByLanguage)
+        {
+            overrides[kv.Key] = kv.Value;
+        }
+
+        if (cps is { } value)
+        {
+            overrides[to.ToLowerInvariant()] = value;
+        }
+
+        return overrides;
+    }
+
+    // Lowercases and trims a reasoning effort, or returns null when it is not one of the supported levels.
+    private static string? NormalizeReasoningEffort(string value)
+    {
+        string normalized = value.Trim().ToLowerInvariant();
+        return normalized is "low" or "medium" or "high" ? normalized : null;
+    }
+
+    private static async Task<IResult> RunQaAsync(MetaClient client, QaOptions options, QaApiRequest req, string from, string to, CancellationToken ct)
+    {
+        try
+        {
+            var qaService = new QaService(client, options);
+
+            // Convert to QaService's input shape (already matches)
+            IReadOnlyList<QaSegmentInput> segments = req.Segments.Select(s => new QaSegmentInput(s.Id, s.Text, s.DurationSeconds)).ToArray();
+
+            QaReport report = await qaService.RunAsync(segments, from, to, ct).ConfigureAwait(false);
+            return Results.Json(report);
+        }
+        catch (MetaApiException ex)
+        {
+            return MapMetaException(ex);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static async Task<SceneSegmentInput[]?> ReadSceneRequestAsync(HttpRequest http, CancellationToken ct)
@@ -582,17 +574,61 @@ public partial class Program
         var segments = JsonSerializer.Deserialize<DirectorAdaptationSegmentInput[]>(segEl.GetRawText(), JsonOptionsWeb)
             ?? throw new InvalidOperationException("Invalid 'segments' array.");
 
-        string? from = null;
-        if (root.TryGetProperty("sourceLanguage", out JsonElement fl)) from = fl.GetString();
-        else if (root.TryGetProperty("source_language", out JsonElement fl2)) from = fl2.GetString();
-        else if (root.TryGetProperty("from", out JsonElement fl3)) from = fl3.GetString();
-
-        string? to = null;
-        if (root.TryGetProperty("targetLanguage", out JsonElement tl)) to = tl.GetString();
-        else if (root.TryGetProperty("target_language", out JsonElement tl2)) to = tl2.GetString();
-        else if (root.TryGetProperty("to", out JsonElement tl3)) to = tl3.GetString();
+        string? from = ReadFirstPresentString(root, "sourceLanguage", "source_language", "from");
+        string? to = ReadFirstPresentString(root, "targetLanguage", "target_language", "to");
 
         return new AdaptationApiRequest(segments, from, to);
+    }
+
+    private const int MaxSceneSegments = 100;
+    private const int MaxConceptsPerSegment = 8;
+    private const int MaxAdaptationSegments = 100;
+
+    // Each validator returns the error message to send back, or null when the request is acceptable.
+    private static string? ValidateSceneSegments(SceneSegmentInput[] segments)
+    {
+        if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
+        {
+            return "Each segment must have a non-empty 'id'.";
+        }
+
+        if (segments.Length > MaxSceneSegments)
+        {
+            return $"At most {MaxSceneSegments} segments are allowed per request.";
+        }
+
+        if (segments.Any(s => (s.Concepts?.Count(c => !string.IsNullOrWhiteSpace(c)) ?? 0) > MaxConceptsPerSegment))
+        {
+            return $"At most {MaxConceptsPerSegment} concepts are allowed per segment.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateAdaptationSegments(IReadOnlyList<DirectorAdaptationSegmentInput> segments)
+    {
+        if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
+        {
+            return "Each segment must have a non-empty 'id'.";
+        }
+
+        if (segments.Select(s => s!.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != segments.Count)
+        {
+            return "Duplicate segment ids are not allowed.";
+        }
+
+        if (segments.Count > MaxAdaptationSegments)
+        {
+            return $"At most {MaxAdaptationSegments} segments are allowed per request.";
+        }
+
+        return null;
+    }
+
+    // Trims the caller's language, or falls back to the default when it is missing or blank.
+    private static string ResolveLanguage(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 
     private static readonly JsonSerializerOptions JsonOptionsWeb = new(JsonSerializerDefaults.Web)
