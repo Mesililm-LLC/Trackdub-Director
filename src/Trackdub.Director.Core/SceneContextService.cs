@@ -623,13 +623,19 @@ public static class SceneSegmentationParser
             IReadOnlyList<int> maskIndices = MaskIndicesWithin(boxIndex);
             _associatedMasks.UnionWith(maskIndices);
 
+            // Every mask inside the span must be well formed, not just the first one that supplies the region's mask.
             MaskFields mask = default;
-            if (maskIndices.Count > 0)
+            for (int i = 0; i < maskIndices.Count; i++)
             {
-                string? maskError = TryParseMask(new TokenBody(_masks[maskIndices[0]].Groups[1].Value), out mask);
+                string? maskError = TryParseMask(new TokenBody(_masks[maskIndices[i]].Groups[1].Value), out MaskFields parsed);
                 if (maskError is not null)
                 {
                     return $"Malformed mask token for concept '{_document.Concept}': {maskError}";
+                }
+
+                if (i == 0)
+                {
+                    mask = parsed;
                 }
             }
 
