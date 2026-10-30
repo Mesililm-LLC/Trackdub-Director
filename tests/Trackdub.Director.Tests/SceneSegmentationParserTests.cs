@@ -55,6 +55,16 @@ public sealed class SceneSegmentationParserTests
     }
 
     [Fact]
+    public void Metadata_key_is_not_mistaken_for_the_data_field()
+    {
+        // "metadata=" ends in "data=" but is a different key, so this mask has no data field.
+        SegmentationParseResult result = SceneSegmentationParser.Parse(Box + "<|mask;x=0;y=0;metadata=foo|>", "red rectangle");
+
+        Assert.True(result.IsMalformed);
+        Assert.Contains("missing 'data='", result.Error);
+    }
+
+    [Fact]
     public void Mask_outside_every_box_span_is_validated_and_malformed_one_fails_the_parse()
     {
         // A mask before the first box is not inside any span, so it goes through unassociated validation.

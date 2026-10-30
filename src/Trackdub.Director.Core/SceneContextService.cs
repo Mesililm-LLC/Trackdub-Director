@@ -729,7 +729,7 @@ public static class SceneSegmentationParser
         {
             mask = default;
 
-            int dataIndex = body.Value.IndexOf("data=", StringComparison.Ordinal);
+            int dataIndex = FindDataField(body.Value);
             if (dataIndex < 0)
             {
                 return $"missing 'data=' in '{Truncate(body)}'";
@@ -755,6 +755,20 @@ public static class SceneSegmentationParser
 
             mask = new MaskFields(x, y, data, null);
             return null;
+        }
+
+        // Finds the "data=" field itself, not a key that merely ends in it (such as "metadata=").
+        private static int FindDataField(string value)
+        {
+            for (int i = value.IndexOf("data=", StringComparison.Ordinal); i >= 0; i = value.IndexOf("data=", i + 1, StringComparison.Ordinal))
+            {
+                if (i == 0 || value[i - 1] == ';')
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private static bool TryParseCoordinate(Dictionary<string, string> fields, string name, out int? value)
