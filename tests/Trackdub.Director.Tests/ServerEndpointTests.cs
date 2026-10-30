@@ -781,4 +781,315 @@ public sealed class ServerEndpointTests
         using JsonDocument doc = JsonDocument.Parse(json);
         AssertModels(doc.RootElement);
     }
+
+    private static HttpResponseMessage UpstreamError(HttpStatusCode status) => new(status)
+    {
+        Content = new StringContent("{\"error\":\"upstream failure\"}", Encoding.UTF8, "application/json"),
+    };
+
+    private static async Task<(HttpStatusCode Status, JsonElement Root)> PostRawAsync(HttpClient client, string path, string body)
+    {
+        HttpResponseMessage resp = await client.PostAsync(path, new StringContent(body, Encoding.UTF8, "application/json"));
+        string json = await resp.Content.ReadAsStringAsync();
+        using JsonDocument doc = JsonDocument.Parse(json);
+        return (resp.StatusCode, doc.RootElement.Clone());
+    }
+
+    private static string ErrorOf(JsonElement root) => root.GetProperty("error").GetString()!;
+
+    [Fact]
+    public async Task Models_upstream_server_error_maps_to_502()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage resp = await client.GetAsync("/api/models");
+
+        Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Models_upstream_unauthorized_maps_to_401()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.Unauthorized))));
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage resp = await client.GetAsync("/api/models");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unknown_api_route_returns_json_404()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))));
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage resp = await client.GetAsync("/api/does-not-exist");
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        Assert.Equal("Not found", ErrorOf(JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement));
+    }
+
+    [Fact]
+    public async Task Translate_rejects_invalid_json()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/translate", "{not json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("Invalid JSON:", ErrorOf(root));
+    }
+
+    [Theory]
+    [InlineData("\"hello\"", "Request body must be a JSON object with 'segments' or a JSON array of segments.")]
+    [InlineData("{}", "Request must include a non-empty 'segments' array.")]
+    [InlineData("{\"segments\":[]}", "Request must include a non-empty 'segments' array of { id, text, duration_seconds? }.")]
+    public async Task Translate_rejects_malformed_bodies(string body, string expectedError)
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/translate", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal(expectedError, ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task Translate_rejects_segment_with_blank_id()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/translate", "{\"segments\":[{\"id\":\"  \",\"text\":\"Hi\"}]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("Each segment must have a non-empty 'id' and 'text'.", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task Translate_rejects_non_string_language_value()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, _) = await PostRawAsync(client, "/api/translate", "{\"segments\":[{\"id\":\"a\",\"text\":\"Hi\"}],\"sourceLanguage\":5}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+    }
+
+    [Fact]
+    public async Task Translate_accepts_a_raw_segment_array_body()
+    {
+        using var auth = FakeAuth();
+        var q = new Queue<string>(["Hola."]);
+        using var factory = new ServerFactory(DualHandler(q, new Queue<string>(), new ChatStubOptions()));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/translate", "[{\"id\":\"seg-001\",\"text\":\"Hello.\"}]");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(1, root.GetProperty("segments").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Qa_rejects_invalid_json()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/qa", "{not json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("Invalid JSON:", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task Qa_rejects_body_without_segments()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/qa", "{}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("Request must include a non-empty 'segments' array.", ErrorOf(root));
+    }
+
+    [Theory]
+    [InlineData("\"maxAttempts\":-1", "maxAttempts must be >= 0.")]
+    [InlineData("\"toleranceFraction\":-0.1", "toleranceFraction must be >= 0.")]
+    [InlineData("\"targetCharactersPerSecond\":0", "targetCharactersPerSecond must be > 0.")]
+    [InlineData("\"reasoningEffort\":\"turbo\"", "reasoningEffort must be low, medium, or high.")]
+    public async Task Qa_rejects_invalid_options_before_any_model_call(string optionJson, string expectedError)
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string body = "{\"segments\":[{\"id\":\"a\",\"text\":\"Hi\",\"duration_seconds\":1.0}],\"sourceLanguage\":\"en\",\"targetLanguage\":\"es\",\"options\":{" + optionJson + "}}";
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/qa", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal(expectedError, ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_rejects_invalid_json()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/scene-context", "{not json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("Invalid JSON:", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_rejects_empty_segments()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/scene-context", "{\"segments\":[]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("Request must include a non-empty 'segments' array", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_rejects_segment_with_blank_id()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/scene-context", "{\"segments\":[{\"id\":\" \"}]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("Each segment must have a non-empty 'id'.", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_rejects_more_than_100_segments()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string segments = string.Join(",", Enumerable.Range(0, 101).Select(i => $"{{\"id\":\"s{i}\"}}"));
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/scene-context", "{\"segments\":[" + segments + "]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("At most 100 segments are allowed per request.", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_rejects_more_than_8_concepts_per_segment()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        const string body = "{\"segments\":[{\"id\":\"a\",\"concepts\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\"]}]}";
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/scene-context", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("At most 8 concepts are allowed per segment.", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task SceneContext_reports_frame_hash_mismatch_without_calling_the_model()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string body = "{\"segments\":[{\"id\":\"a\",\"frame_image_data_url\":\"data:image/png;base64,iVBORw0KGgo=\",\"frame_sha256\":\"" + new string('0', 64) + "\"}]}";
+
+        HttpResponseMessage resp = await client.PostAsync("/api/scene-context", new StringContent(body, Encoding.UTF8, "application/json"));
+        string json = await resp.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Contains("Frame SHA-256 mismatch", json);
+    }
+
+    [Fact]
+    public async Task SceneContext_accepts_a_raw_segment_array_without_frames()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, _) = await PostRawAsync(client, "/api/scene-context", "[{\"id\":\"a\",\"text\":\"Hi\"}]");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+    }
+
+    [Fact]
+    public async Task DirectorAdaptation_rejects_invalid_json()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/director-adaptation", "{not json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("Invalid JSON:", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task DirectorAdaptation_rejects_empty_segments()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/director-adaptation", "{\"segments\":[]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.StartsWith("Request must include a non-empty 'segments' array", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task DirectorAdaptation_rejects_segment_with_blank_id()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/director-adaptation", "{\"segments\":[{\"id\":\"\"}]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("Each segment must have a non-empty 'id'.", ErrorOf(root));
+    }
+
+    [Fact]
+    public async Task DirectorAdaptation_rejects_more_than_100_segments()
+    {
+        using var auth = FakeAuth();
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string segments = string.Join(",", Enumerable.Range(0, 101).Select(i => $"{{\"id\":\"s{i}\"}}"));
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/director-adaptation", "{\"segments\":[" + segments + "]}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("At most 100 segments are allowed per request.", ErrorOf(root));
+    }
 }
