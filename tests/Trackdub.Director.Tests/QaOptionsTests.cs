@@ -43,15 +43,20 @@ public sealed class QaOptionsTests
         }
     }
 
+    private static void AssertDefaults(QaOptions options)
+    {
+        Assert.Equal(3, options.MaxAttempts);
+        Assert.Equal(0.10, options.ToleranceFraction);
+        Assert.Equal("low", options.ReasoningEffort);
+        Assert.Empty(options.CharactersPerSecondByLanguage);
+    }
+
     [Fact]
     public void Defaults_match_the_documented_values()
     {
         var options = new QaOptions();
 
-        Assert.Equal(3, options.MaxAttempts);
-        Assert.Equal(0.10, options.ToleranceFraction);
-        Assert.Equal("low", options.ReasoningEffort);
-        Assert.Empty(options.CharactersPerSecondByLanguage);
+        AssertDefaults(options);
     }
 
     [Fact]
@@ -93,10 +98,7 @@ public sealed class QaOptionsTests
 
         QaOptions options = QaOptions.FromEnvironment();
 
-        Assert.Equal(3, options.MaxAttempts);
-        Assert.Equal(0.10, options.ToleranceFraction);
-        Assert.Equal("low", options.ReasoningEffort);
-        Assert.Empty(options.CharactersPerSecondByLanguage);
+        AssertDefaults(options);
     }
 
     [Fact]
@@ -146,9 +148,7 @@ public sealed class QaOptionsTests
 
         QaOptions options = QaOptions.FromEnvironment();
 
-        Assert.Equal(3, options.MaxAttempts);
-        Assert.Equal(0.10, options.ToleranceFraction);
-        Assert.Empty(options.CharactersPerSecondByLanguage);
+        AssertDefaults(options);
     }
 
     [Fact]
