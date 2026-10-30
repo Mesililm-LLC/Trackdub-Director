@@ -371,6 +371,55 @@ describe("App smoke", () => {
     expect(within(seg2).queryByText(/Adapted ·/)).not.toBeInTheDocument();
   });
 
+  it("discards a stale director response after inputs are reloaded", async () => {
+    let resolveDirector: ((value: Response) => void) | null = null;
+    const directorMock = {
+      source_language: "en",
+      target_language: "es",
+      segments: [
+        {
+          id: "seg-001",
+          status: "Passed",
+          original_translation: "Hola",
+          adapted_translation: "Buenas, ¿qué tal?",
+          target_register: "informal",
+          changed: true,
+          context_fields_used: [],
+          provenance: { model_id: "muse-spark-1.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "director-v1" },
+          usage: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+          timing_verdict: "Pass",
+          estimated_seconds: 1.0,
+          window_seconds: 1.0,
+          meaning: { verdict: "Pass", issues: [], explanation: "ok", usage: { prompt_tokens: 90, completion_tokens: 30, total_tokens: 120 } },
+        },
+      ],
+      usage_total: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+      meaning_usage_total: { prompt_tokens: 90, completion_tokens: 30, total_tokens: 120 },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/director-adaptation")) {
+          return new Promise<Response>((resolve) => {
+            resolveDirector = () => resolve(new Response(JSON.stringify(directorMock), { status: 200 }));
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Director" }).click();
+    // Reloading inputs invalidates the pending request; resolving it after
+    // the reset must not paint the old adaptations onto the new segments.
+    await waitFor(() => expect(resolveDirector).not.toBeNull());
+    screen.getByRole("button", { name: "Load sample" }).click();
+    resolveDirector!(new Response("unused", { status: 200 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("Director: Passed")).not.toBeInTheDocument();
+  });
+
   it("shows read-only scene context after Run Scene", async () => {
     const sceneMock = {
       segments: [

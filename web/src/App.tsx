@@ -810,9 +810,10 @@ interface ActionsContext {
   sceneById: Map<number, SceneSegmentResult> | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   sceneRequestRef: React.RefObject<number>;
+  directorRequestRef: React.RefObject<number>;
 }
 
-function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, qaById, batchById, sceneById, setError, sceneRequestRef }: ActionsContext) {
+function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, qaById, batchById, sceneById, setError, sceneRequestRef, directorRequestRef }: ActionsContext) {
   const [busy, setBusy] = useState<BusyState>(null);
 
   const run = useCallback(async (kind: Exclude<BusyState, null>, action: () => Promise<void>) => {
@@ -875,9 +876,11 @@ function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setSce
             : null,
         };
       });
-      setDirector(await postDirectorAdaptation(prepared, from, to));
+      const requestId = ++directorRequestRef.current;
+      const res = await postDirectorAdaptation(prepared, from, to);
+      if (requestId === directorRequestRef.current) setDirector(res);
     });
-  }, [run, segments, from, to, setDirector, qaById, batchById, sceneById]);
+  }, [run, segments, from, to, setDirector, qaById, batchById, sceneById, directorRequestRef]);
 
   return { busy, runTranslate, runQa, runScene, runDirector };
 }
@@ -887,9 +890,11 @@ export default function App() {
   const { status, statusError, refreshStatus } = useStatus();
   const reports = useReports();
   const sceneRequestRef = useRef(0);
+  const directorRequestRef = useRef(0);
   const onReset = useCallback(() => {
     reports.reset();
     sceneRequestRef.current += 1;
+    directorRequestRef.current += 1;
   }, [reports]);
   const input = useSegments(onReset, setError);
   const actions = useActions({
@@ -906,6 +911,7 @@ export default function App() {
     sceneById: reports.sceneById,
     setError,
     sceneRequestRef,
+    directorRequestRef,
   });
 
   return (
