@@ -14,3 +14,4 @@ node_modules/
 web/dist/
 *.mp4
 /samples/voa10/media/
+IDEA.md
