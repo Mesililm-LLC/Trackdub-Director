@@ -301,6 +301,125 @@ describe("App smoke", () => {
     expect(screen.getByText(/Candidate omits obligation/)).toBeInTheDocument();
   });
 
+  it("shows director adaptation side by side with gate pills after Run Director", async () => {
+    const directorMock = {
+      source_language: "en",
+      target_language: "es",
+      segments: [
+        {
+          id: "seg-001",
+          status: "Failed",
+          text: "Hello",
+          original_translation: "Hola, ¿qué tal?",
+          adapted_translation: "Buenas tardes, ¿cómo se encuentra usted?",
+          changed: true,
+          target_register: "formal",
+          context_fields_used: ["emotion_tone_label", "scene_summary"],
+          provenance: { model_id: "muse-spark-1.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "director-v1" },
+          usage: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160, reasoning_tokens: 12, cached_tokens: 0 },
+          timing_verdict: "Pass",
+          estimated_seconds: 2.73,
+          window_seconds: 4.0,
+          meaning: {
+            verdict: "Fail",
+            issues: ["added a greeting time not in the source"],
+            explanation: "Candidate adds information.",
+            model_id: "muse-spark-1.1",
+            prompt_template_version: "meaning-v1",
+            timestamp_utc: "2026-10-29T00:00:00Z",
+            usage: { prompt_tokens: 90, completion_tokens: 30, total_tokens: 120 },
+          },
+        },
+        {
+          id: "seg-002",
+          status: "NotRequested",
+          context_fields_used: [],
+        },
+      ],
+      usage_total: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160, reasoning_tokens: 12, cached_tokens: 0 },
+      meaning_usage_total: { prompt_tokens: 90, completion_tokens: 30, total_tokens: 120 },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/director-adaptation")) return new Response(JSON.stringify(directorMock), { status: 200 });
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Director" }).click();
+    await waitFor(() => expect(screen.getByText("Director: Failed")).toBeInTheDocument());
+
+    const seg1 = getCard("seg-001");
+    // Original and adapted translations sit side by side with the target register.
+    expect(within(seg1).getByText(/Original translation/)).toBeInTheDocument();
+    expect(within(seg1).getByText("Hola, ¿qué tal?")).toBeInTheDocument();
+    expect(within(seg1).getByText(/Adapted · formal/)).toBeInTheDocument();
+    expect(within(seg1).getByText("Buenas tardes, ¿cómo se encuentra usted?")).toBeInTheDocument();
+    // Both gate outcomes render as pills with the meaning issues preserved.
+    expect(within(seg1).getByText("Timing: Pass")).toBeInTheDocument();
+    expect(within(seg1).getByText("Meaning: Fail")).toBeInTheDocument();
+    expect(within(seg1).getByText(/added a greeting time not in the source/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/Context fields used: emotion_tone_label, scene_summary/)).toBeInTheDocument();
+    expect(within(seg1).getByText("Adaptation: changed")).toBeInTheDocument();
+    expect(within(seg1).getByText(/Director gate: model muse-spark-1\.1 · template director-v1/)).toBeInTheDocument();
+
+    // A segment that never opted in gets no director panel.
+    const seg2 = getCard("seg-002");
+    expect(within(seg2).queryByText(/Adapted ·/)).not.toBeInTheDocument();
+  });
+
+  it("discards a stale director response after inputs are reloaded", async () => {
+    let resolveDirector: ((value: Response) => void) | null = null;
+    const directorMock = {
+      source_language: "en",
+      target_language: "es",
+      segments: [
+        {
+          id: "seg-001",
+          status: "Passed",
+          original_translation: "Hola",
+          adapted_translation: "Buenas, ¿qué tal?",
+          target_register: "informal",
+          changed: true,
+          context_fields_used: [],
+          provenance: { model_id: "muse-spark-1.1", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-29T00:00:00Z", prompt_template_version: "director-v1" },
+          usage: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+          timing_verdict: "Pass",
+          estimated_seconds: 1.0,
+          window_seconds: 1.0,
+          meaning: { verdict: "Pass", issues: [], explanation: "ok", usage: { prompt_tokens: 90, completion_tokens: 30, total_tokens: 120 } },
+        },
+      ],
+      usage_total: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+      meaning_usage_total: { prompt_tokens: 90, completion_tokens: 30, total_tokens: 120 },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/director-adaptation")) {
+          return new Promise<Response>((resolve) => {
+            resolveDirector = () => resolve(new Response(JSON.stringify(directorMock), { status: 200 }));
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Director" }).click();
+    // Reloading inputs invalidates the pending request; resolving it after
+    // the reset must not paint the old adaptations onto the new segments.
+    await waitFor(() => expect(resolveDirector).not.toBeNull());
+    screen.getByRole("button", { name: "Load sample" }).click();
+    resolveDirector!(new Response("unused", { status: 200 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("Director: Passed")).not.toBeInTheDocument();
+  });
+
   it("shows read-only scene context after Run Scene", async () => {
     const sceneMock = {
       segments: [

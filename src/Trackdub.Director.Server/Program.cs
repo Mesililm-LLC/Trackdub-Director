@@ -286,6 +286,63 @@ app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextServic
     }
 });
 
+const int MaxAdaptationSegments = 100;
+
+app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient client, CancellationToken ct) =>
+{
+    AdaptationApiRequest? req;
+    try
+    {
+        req = await ReadAdaptationRequestAsync(request, ct).ConfigureAwait(false);
+    }
+    catch (JsonException ex)
+    {
+        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    if (req is null || req.Segments.Count == 0)
+    {
+        return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text?, translation?, duration_seconds?, context?, director_adaptation? }." });
+    }
+
+    if (req.Segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
+    {
+        return Results.BadRequest(new { error = "Each segment must have a non-empty 'id'." });
+    }
+
+    if (req.Segments.Select(s => s!.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != req.Segments.Count)
+    {
+        return Results.BadRequest(new { error = "Duplicate segment ids are not allowed." });
+    }
+
+    if (req.Segments.Count > MaxAdaptationSegments)
+    {
+        return Results.BadRequest(new { error = $"At most {MaxAdaptationSegments} segments are allowed per request." });
+    }
+
+    string from = string.IsNullOrWhiteSpace(req.SourceLanguage) ? "en" : req.SourceLanguage.Trim();
+    string to = string.IsNullOrWhiteSpace(req.TargetLanguage) ? "es" : req.TargetLanguage.Trim();
+
+    try
+    {
+        var service = new DirectorAdaptationService(client, QaOptions.FromEnvironment());
+        DirectorAdaptationBatch batch = await service.RunAsync(req.Segments, from, to, ct).ConfigureAwait(false);
+        return Results.Json(batch);
+    }
+    catch (MetaApiException ex)
+    {
+        return MapMetaException(ex);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 // SPA fallback: for non-/api routes, serve index.html if it exists (after a prod build)
 app.MapFallback(async (HttpContext ctx) =>
 {
@@ -505,6 +562,39 @@ public partial class Program
             ?? throw new InvalidOperationException("Invalid 'segments' array.");
     }
 
+    private static async Task<AdaptationApiRequest?> ReadAdaptationRequestAsync(HttpRequest http, CancellationToken ct)
+    {
+        using var doc = await JsonDocument.ParseAsync(http.Body, cancellationToken: ct).ConfigureAwait(false);
+        JsonElement root = doc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            var arr = JsonSerializer.Deserialize<DirectorAdaptationSegmentInput[]>(root.GetRawText(), JsonOptionsWeb)
+                ?? throw new InvalidOperationException("Invalid segments array.");
+            return new AdaptationApiRequest(arr, null, null);
+        }
+
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("segments", out JsonElement segEl))
+        {
+            throw new InvalidOperationException("Request must include a non-empty 'segments' array.");
+        }
+
+        var segments = JsonSerializer.Deserialize<DirectorAdaptationSegmentInput[]>(segEl.GetRawText(), JsonOptionsWeb)
+            ?? throw new InvalidOperationException("Invalid 'segments' array.");
+
+        string? from = null;
+        if (root.TryGetProperty("sourceLanguage", out JsonElement fl)) from = fl.GetString();
+        else if (root.TryGetProperty("source_language", out JsonElement fl2)) from = fl2.GetString();
+        else if (root.TryGetProperty("from", out JsonElement fl3)) from = fl3.GetString();
+
+        string? to = null;
+        if (root.TryGetProperty("targetLanguage", out JsonElement tl)) to = tl.GetString();
+        else if (root.TryGetProperty("target_language", out JsonElement tl2)) to = tl2.GetString();
+        else if (root.TryGetProperty("to", out JsonElement tl3)) to = tl3.GetString();
+
+        return new AdaptationApiRequest(segments, from, to);
+    }
+
     private static readonly JsonSerializerOptions JsonOptionsWeb = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -535,6 +625,11 @@ internal sealed record QaApiRequest(
     string? SourceLanguage,
     string? TargetLanguage,
     QaOptionsDto? Options);
+
+internal sealed record AdaptationApiRequest(
+    IReadOnlyList<DirectorAdaptationSegmentInput> Segments,
+    string? SourceLanguage,
+    string? TargetLanguage);
 
 internal sealed record QaOptionsDto(
     int? MaxAttempts,

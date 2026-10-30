@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchStatus,
+  postDirectorAdaptation,
   postQa,
   postSceneContext,
   postTranslate,
+  type DirectorAdaptationBatch,
+  type DirectorAdaptationInput,
+  type DirectorAdaptationSegmentResult,
   type DirectorContext,
   type QaAttempt,
   type QaReport,
@@ -21,7 +25,7 @@ import sampleSegments from "./sampleSegments.json";
 const DEFAULT_FROM = "en";
 const DEFAULT_TO = "es";
 
-type BusyState = "translate" | "qa" | "scene" | null;
+type BusyState = "translate" | "qa" | "scene" | "director" | null;
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
@@ -55,6 +59,7 @@ function parseSegments(text: string): SegmentInput[] {
 }
 
 interface LineCardProps {
+  director: DirectorAdaptationSegmentResult | undefined;
   seg: SegmentInput;
   q: QaSegmentReport | undefined;
   translated: string | null;
@@ -371,6 +376,114 @@ function ScenePanel({ seg, scene }: { seg: SegmentInput; scene: SceneSegmentResu
   );
 }
 
+function DirectorStatusPill({ director }: { director: DirectorAdaptationSegmentResult }) {
+  const statusClass = director.status === "Passed" ? "verdict-pass" : "verdict-fail";
+  return (
+    <span className={`verdict ${statusClass}`} title="Director adaptation (Passed only when timing passes and meaning is Pass)">
+      Director: {director.status}
+    </span>
+  );
+}
+
+function DirectorMeaningPill({ director }: { director: DirectorAdaptationSegmentResult }) {
+  const meaning = director.meaning;
+  if (!meaning) {
+    return null;
+  }
+
+  if (meaning.verdict === "NotEvaluated") {
+    return (
+      <span className="verdict verdict-notevaluated" title="Not checked (timing failed)">
+        Meaning: Not checked
+      </span>
+    );
+  }
+
+  return (
+    <span className={verdictClass(meaning.verdict)} title={meaning.explanation}>
+      Meaning: {meaning.verdict}
+    </span>
+  );
+}
+
+function DirectorGatePills({ director }: { director: DirectorAdaptationSegmentResult }) {
+  return (
+    <div className="line-meta">
+      {director.timing_verdict && (
+        <span className={verdictClass(director.timing_verdict)} title="Timing gate (adapted line)">
+          Timing: {director.timing_verdict}
+        </span>
+      )}
+      <DirectorMeaningPill director={director} />
+      <DirectorStatusPill director={director} />
+      {director.estimated_seconds != null && director.window_seconds != null && (
+        <span className="meta-pill" title="Adapted estimate vs window">
+          est {fmtSec(director.estimated_seconds)} / window {fmtSec(director.window_seconds)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DirectorSideBySide({ director }: { director: DirectorAdaptationSegmentResult }) {
+  return (
+    <div className="director-grid">
+      <div>
+        <div className="director-label">Original translation</div>
+        <div className="line-translation">{director.original_translation ?? "—"}</div>
+      </div>
+      <div>
+        <div className="director-label">Adapted · {director.target_register ?? "—"}</div>
+        <div className="line-translation">{director.adapted_translation ?? "—"}</div>
+      </div>
+    </div>
+  );
+}
+
+function DirectorMeaningIssues({ director }: { director: DirectorAdaptationSegmentResult }) {
+  const meaning = director.meaning;
+  if (!meaning || (meaning.issues.length === 0 && meaning.verdict === "Pass")) {
+    return null;
+  }
+
+  return (
+    <div className="meaning-issues">
+      <strong>meaning{meaning.issues.length > 0 ? " issues:" : ":"}</strong>{" "}
+      {meaning.issues.length > 0 ? meaning.issues.join("; ") : meaning.explanation}
+      {meaning.issues.length > 0 && meaning.explanation ? ` — ${meaning.explanation}` : ""}
+    </div>
+  );
+}
+
+function DirectorPanel({ seg, director }: { seg: SegmentInput; director: DirectorAdaptationSegmentResult }) {
+  return (
+    <div className="attempts-panel" aria-label={`Director adaptation for ${seg.id}`}>
+      <DirectorSideBySide director={director} />
+      <DirectorGatePills director={director} />
+      {director.error && (
+        <div className="meaning-issues">
+          <strong>Adaptation failed:</strong> {director.error}
+        </div>
+      )}
+      <DirectorMeaningIssues director={director} />
+      {director.changed != null && (
+        <div className="token-usage">Adaptation: {director.changed ? "changed" : "no change"}</div>
+      )}
+      <div className="token-usage">
+        Context fields used: {director.context_fields_used.length ? director.context_fields_used.join(", ") : "none"}
+      </div>
+      {director.provenance && (
+        <div className="token-usage">
+          Director gate: model {director.provenance.model_id} · template {director.provenance.prompt_template_version} · {director.provenance.timestamp_utc} · tokens{" "}
+          {director.usage?.total_tokens ?? "—"}
+          {director.usage?.reasoning_tokens != null ? ` (reasoning ${director.usage.reasoning_tokens})` : ""}
+          {director.meaning ? ` · meaning tokens ${director.meaning.usage.total_tokens}` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LineMeta({ q, scene, view, translated }: {
   q: QaSegmentReport | undefined;
   scene: SceneSegmentResult | undefined;
@@ -396,7 +509,7 @@ function AttemptToggle({ isExpanded, onToggle }: { isExpanded: boolean; onToggle
   );
 }
 
-function LineCard({ seg, q, translated, scene, isExpanded, onToggle }: LineCardProps) {
+function LineCard({ seg, q, translated, scene, director, isExpanded, onToggle }: LineCardProps) {
   const view = deriveLineView(seg, q, translated);
 
   return (
@@ -412,6 +525,7 @@ function LineCard({ seg, q, translated, scene, isExpanded, onToggle }: LineCardP
       {q && <AttemptToggle isExpanded={isExpanded} onToggle={onToggle} />}
       {q && isExpanded && <AttemptsPanel q={q} shownAttempt={view.shownAttempt} />}
       {scene && <ScenePanel seg={seg} scene={scene} />}
+      {director && director.status !== "NotRequested" && <DirectorPanel seg={seg} director={director} />}
     </article>
   );
 }
@@ -516,9 +630,10 @@ interface ToolbarProps {
   onTranslate: () => Promise<void>;
   onQa: () => Promise<void>;
   onScene: () => Promise<void>;
+  onDirector: () => Promise<void>;
 }
 
-function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadSample, onTranslate, onQa, onScene }: ToolbarProps) {
+function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadSample, onTranslate, onQa, onScene, onDirector }: ToolbarProps) {
   const disabled = busy !== null || segments.length === 0;
   return (
     <div className="toolbar">
@@ -531,6 +646,9 @@ function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadS
         </button>
         <button type="button" className="btn btn-primary" onClick={() => void onScene()} disabled={disabled}>
           {busy === "scene" ? "Running Scene…" : "Run Scene"}
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => void onDirector()} disabled={disabled}>
+          {busy === "director" ? "Running Director…" : "Run Director"}
         </button>
         <span className="toolbar-hint">
           {segments.length} segments · {from} → {to}
@@ -554,11 +672,12 @@ interface LineListProps {
   qaById: Map<string, QaSegmentReport> | null;
   batchById: Map<string, string> | null;
   sceneById: Map<number, SceneSegmentResult> | null;
+  directorById: Map<string, DirectorAdaptationSegmentResult> | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
 }
 
-function LineList({ segments, qaById, batchById, sceneById, expanded, onToggle }: LineListProps) {
+function LineList({ segments, qaById, batchById, sceneById, directorById, expanded, onToggle }: LineListProps) {
   return (
     <div className="lines" role="list">
       {segments.map((seg, idx) => (
@@ -568,6 +687,7 @@ function LineList({ segments, qaById, batchById, sceneById, expanded, onToggle }
           q={qaById?.get(seg.id)}
           translated={batchById?.get(seg.id) ?? null}
           scene={sceneById?.get(idx)}
+          director={directorById?.get(seg.id)}
           isExpanded={expanded[seg.id] ?? false}
           onToggle={() => onToggle(seg.id)}
         />
@@ -622,17 +742,21 @@ function useReports() {
   const [qa, setQa] = useState<QaReport | null>(null);
   const [batch, setBatch] = useState<TranslateBatch | null>(null);
   const [scene, setScene] = useState<SceneContextBatch | null>(null);
+  const [director, setDirector] = useState<DirectorAdaptationBatch | null>(null);
 
   const reset = useCallback(() => {
     setQa(null);
     setBatch(null);
     setScene(null);
+    setDirector(null);
   }, []);
   const sceneById = useMemo(() => (scene ? new Map(scene.segments.map((s, i) => [i, s] as const)) : null), [scene]);
   const qaById = useMemo(() => (qa ? new Map(qa.segments.map((s) => [s.id, s] as const)) : null), [qa]);
   const batchById = useMemo(() => (batch ? new Map(batch.segments.map((s) => [s.id, s.translation] as const)) : null), [batch]);
 
-  return { qa, setQa, batch, setBatch, scene, setScene, reset, qaById, sceneById, batchById };
+  const directorById = useMemo(() => (director ? new Map(director.segments.map((s) => [s.id, s] as const)) : null), [director]);
+
+  return { qa, setQa, batch, setBatch, scene, setScene, director, setDirector, reset, qaById, sceneById, batchById, directorById };
 }
 
 function useSegments(onReset: () => void, setError: React.Dispatch<React.SetStateAction<string | null>>) {
@@ -680,11 +804,16 @@ interface ActionsContext {
   setBatch: (batch: TranslateBatch) => void;
   setQa: (qa: QaReport) => void;
   setScene: (scene: SceneContextBatch) => void;
+  setDirector: (director: DirectorAdaptationBatch) => void;
+  qaById: Map<string, QaSegmentReport> | null;
+  batchById: Map<string, string> | null;
+  sceneById: Map<number, SceneSegmentResult> | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   sceneRequestRef: React.RefObject<number>;
+  directorRequestRef: React.RefObject<number>;
 }
 
-function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setError, sceneRequestRef }: ActionsContext) {
+function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, qaById, batchById, sceneById, setError, sceneRequestRef, directorRequestRef }: ActionsContext) {
   const [busy, setBusy] = useState<BusyState>(null);
 
   const run = useCallback(async (kind: Exclude<BusyState, null>, action: () => Promise<void>) => {
@@ -716,7 +845,44 @@ function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setSce
     });
   }, [run, segments, setScene, sceneRequestRef]);
 
-  return { busy, runTranslate, runQa, runScene };
+  const runDirector = useCallback(async () => {
+    await run("director", async () => {
+      // Existing translation: explicit input wins, else the QA final line, else
+      // the plain translation. Context: explicit input wins, else the scene
+      // lane's context for this segment. Segments without an opt-in are sent
+      // as-is and come back NotRequested with no calls made for them.
+      const prepared: DirectorAdaptationInput[] = segments.map((seg, idx) => {
+        const sceneContext = sceneById?.get(idx)?.context;
+        return {
+          id: seg.id,
+          text: seg.text,
+          translation: seg.translation ?? qaById?.get(seg.id)?.final_translation ?? batchById?.get(seg.id) ?? null,
+          duration_seconds: seg.duration_seconds ?? null,
+          context:
+            seg.context ??
+            (sceneContext
+              ? {
+                  speaker_id: sceneContext.speaker_id ?? null,
+                  speaker_label: sceneContext.speaker_label ?? null,
+                  emotion_tone_label: sceneContext.emotion_tone_label ?? null,
+                  on_screen_text: sceneContext.on_screen_text ?? null,
+                  scene_summary: sceneContext.scene_summary ?? null,
+                  speaker_description: sceneContext.speaker_description ?? null,
+                  burned_in_text: sceneContext.burned_in_text ?? null,
+                }
+              : null),
+          director_adaptation: seg.director_adaptation
+            ? { target_register: seg.director_adaptation.target_register ?? null }
+            : null,
+        };
+      });
+      const requestId = ++directorRequestRef.current;
+      const res = await postDirectorAdaptation(prepared, from, to);
+      if (requestId === directorRequestRef.current) setDirector(res);
+    });
+  }, [run, segments, from, to, setDirector, qaById, batchById, sceneById, directorRequestRef]);
+
+  return { busy, runTranslate, runQa, runScene, runDirector };
 }
 
 export default function App() {
@@ -724,9 +890,11 @@ export default function App() {
   const { status, statusError, refreshStatus } = useStatus();
   const reports = useReports();
   const sceneRequestRef = useRef(0);
+  const directorRequestRef = useRef(0);
   const onReset = useCallback(() => {
     reports.reset();
     sceneRequestRef.current += 1;
+    directorRequestRef.current += 1;
   }, [reports]);
   const input = useSegments(onReset, setError);
   const actions = useActions({
@@ -737,8 +905,13 @@ export default function App() {
     setBatch: reports.setBatch,
     setQa: reports.setQa,
     setScene: reports.setScene,
+    setDirector: reports.setDirector,
+    qaById: reports.qaById,
+    batchById: reports.batchById,
+    sceneById: reports.sceneById,
     setError,
     sceneRequestRef,
+    directorRequestRef,
   });
 
   return (
@@ -756,12 +929,14 @@ export default function App() {
           onTranslate={actions.runTranslate}
           onQa={actions.runQa}
           onScene={actions.runScene}
+          onDirector={actions.runDirector}
         />
         <LineList
           segments={input.segments}
           qaById={reports.qaById}
           batchById={reports.batchById}
           sceneById={reports.sceneById}
+          directorById={reports.directorById}
           expanded={input.expanded}
           onToggle={input.toggle}
         />

@@ -693,6 +693,81 @@ public sealed class ServerEndpointTests
     }
 
     [Fact]
+    public async Task DirectorAdaptation_passes_both_gates_and_reports_context_fields()
+    {
+        using var auth = FakeAuth();
+        var handler = new DelegatingHandlerStub(async (request, cancellationToken) =>
+        {
+            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            return body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal)
+                ? ChatOk("muse-spark-1.1", """{"verdict":"pass","issues":[],"explanation":"ok"}""", 90, 30)
+                : ChatOk("muse-spark-1.1", "Perfecto, una toma más.", 120, 40);
+        });
+        using var factory = new ServerFactory(handler);
+        using HttpClient client = factory.CreateClient();
+
+        var requestBody = new
+        {
+            segments = new[]
+            {
+                new
+                {
+                    id = "seg-002",
+                    text = "We need one more take.",
+                    translation = "Necesitamos una toma más.",
+                    duration_seconds = 4.0,
+                    context = new { emotion_tone_label = "cheerful" },
+                    director_adaptation = new { target_register = "informal" },
+                },
+            },
+            sourceLanguage = "en",
+            targetLanguage = "es",
+        };
+
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/director-adaptation", requestBody);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        string json = await resp.Content.ReadAsStringAsync();
+        using JsonDocument doc = JsonDocument.Parse(json);
+        JsonElement seg = doc.RootElement.GetProperty("segments")[0];
+        Assert.Equal("Passed", seg.GetProperty("status").GetString());
+        Assert.Equal("informal", seg.GetProperty("target_register").GetString());
+        Assert.Equal("Perfecto, una toma más.", seg.GetProperty("adapted_translation").GetString());
+        Assert.Equal("Pass", seg.GetProperty("timing_verdict").GetString());
+        Assert.Equal("Pass", seg.GetProperty("meaning").GetProperty("verdict").GetString());
+        Assert.Equal("emotion_tone_label", seg.GetProperty("context_fields_used")[0].GetString());
+        Assert.Equal("director-v1", seg.GetProperty("provenance").GetProperty("prompt_template_version").GetString());
+        Assert.True(seg.GetProperty("changed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task DirectorAdaptation_rejects_duplicate_segment_ids()
+    {
+        using var auth = FakeAuth();
+        int calls = 0;
+        var handler = new DelegatingHandlerStub((request, cancellationToken) =>
+        {
+            calls++;
+            return Task.FromResult(ChatOk("muse-spark-1.1", "x", 1, 1));
+        });
+        using var factory = new ServerFactory(handler);
+        using HttpClient client = factory.CreateClient();
+
+        var requestBody = new
+        {
+            segments = new[]
+            {
+                new { id = "seg-008", text = "a", translation = "b", director_adaptation = new { target_register = "formal" } },
+                new { id = "seg-008", text = "c", translation = "d", director_adaptation = new { target_register = "informal" } },
+            },
+        };
+
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/director-adaptation", requestBody);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task Models_returns_account_models()
     {
         using var auth = FakeAuth();
