@@ -28,6 +28,7 @@ public sealed class DirectorAdaptationServiceTests
         public string AdaptationFinishReason = "stop";
         public string MeaningContent = """{"verdict":"pass","issues":[],"explanation":"Meaning preserved."}""";
         public bool MeaningTransportsError;
+        public bool AdaptationTransportsError;
 
         public async Task<HttpResponseMessage> HandleAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -37,31 +38,51 @@ public sealed class DirectorAdaptationServiceTests
 
             if (body.Contains(DirectorAdaptationService.DirectorMarker, StringComparison.Ordinal))
             {
-                AdaptationCalls++;
                 AdaptationBodies.Add(body);
-                return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12, finishReason: AdaptationFinishReason);
+                return AdaptationResponse();
             }
 
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
-                MeaningCalls++;
-                if (MeaningTransportsError)
-                {
-                    return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-                    {
-                        Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
-                    };
-                }
-
-                return ChatOk(MeaningContent, promptTokens: 90, completionTokens: 30, reasoningTokens: null);
+                return MeaningResponse();
             }
 
             throw new InvalidOperationException($"Unexpected request body: {body}");
         }
+
+        private HttpResponseMessage AdaptationResponse()
+        {
+            AdaptationCalls++;
+            if (AdaptationTransportsError)
+            {
+                return UpstreamError();
+            }
+
+            return ChatOk(new ChatReply(AdaptationContent, 120, 40, 12, AdaptationFinishReason));
+        }
+
+        private HttpResponseMessage MeaningResponse()
+        {
+            MeaningCalls++;
+            if (MeaningTransportsError)
+            {
+                return UpstreamError();
+            }
+
+            return ChatOk(new ChatReply(MeaningContent, 90, 30, null, "stop"));
+        }
+
+        private static HttpResponseMessage UpstreamError() => new(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
+        };
     }
 
-    private static HttpResponseMessage ChatOk(string content, int promptTokens, int completionTokens, int? reasoningTokens, string finishReason = "stop")
+    private sealed record ChatReply(string Content, int PromptTokens, int CompletionTokens, int? ReasoningTokens, string FinishReason);
+
+    private static HttpResponseMessage ChatOk(ChatReply reply)
     {
+        (string content, int promptTokens, int completionTokens, int? reasoningTokens, string finishReason) = reply;
         var payload = new
         {
             id = "chatcmpl-test-director",
@@ -92,21 +113,26 @@ public sealed class DirectorAdaptationServiceTests
             => _stub.HandleAsync(request, cancellationToken);
     }
 
-    private sealed record EnvSetting(string Key, string Value);
-
-    private static IDisposable EnvShim(EnvSetting setting)
+    private sealed class EnvScope : IDisposable
     {
-        string? previous = Environment.GetEnvironmentVariable(setting.Key);
-        Environment.SetEnvironmentVariable(setting.Key, setting.Value);
-        return new Restore(setting, previous);
-    }
+        private readonly Dictionary<string, string?> _previous = new(StringComparer.Ordinal);
 
-    private sealed class Restore : IDisposable
-    {
-        private readonly EnvSetting _setting;
-        private readonly string? _previous;
-        public Restore(EnvSetting setting, string? previous) { _setting = setting; _previous = previous; }
-        public void Dispose() => Environment.SetEnvironmentVariable(_setting.Key, _previous);
+        public EnvScope(IReadOnlyDictionary<string, string> values)
+        {
+            foreach (KeyValuePair<string, string> entry in values)
+            {
+                _previous[entry.Key] = Environment.GetEnvironmentVariable(entry.Key);
+                Environment.SetEnvironmentVariable(entry.Key, entry.Value);
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (KeyValuePair<string, string?> entry in _previous)
+            {
+                Environment.SetEnvironmentVariable(entry.Key, entry.Value);
+            }
+        }
     }
 
     private sealed class Composite : IDisposable
@@ -118,9 +144,11 @@ public sealed class DirectorAdaptationServiceTests
 
     private static IDisposable FakeAuth()
     {
-        return new Composite(
-            EnvShim(new EnvSetting("META_API_KEY", "test-fake-key")),
-            EnvShim(new EnvSetting("META_MODEL_API_BASE_URL", "https://api.meta.ai/v1")));
+        return new EnvScope(new Dictionary<string, string>
+        {
+            ["META_API_KEY"] = "test-fake-key",
+            ["META_MODEL_API_BASE_URL"] = "https://api.meta.ai/v1",
+        });
     }
 
     private static (DirectorAdaptationService Service, IDisposable Scope) BuildService(LaneStub stub)
@@ -448,10 +476,17 @@ public sealed class DirectorAdaptationServiceTests
         }
     }
 
-    [Fact]
-    public async Task MeaningTransportError_IsTerminalFailWithErrorVerdict()
+    public enum TransportFailure { Adaptation, Meaning }
+
+    [Theory]
+    [InlineData(TransportFailure.Adaptation)]
+    [InlineData(TransportFailure.Meaning)]
+    public async Task TransportError_FailsTheSegmentAsTerminal(TransportFailure failure)
     {
-        var stub = new LaneStub { MeaningTransportsError = true };
+        bool adaptationFails = failure == TransportFailure.Adaptation;
+        var stub = adaptationFails
+            ? new LaneStub { AdaptationTransportsError = true }
+            : new LaneStub { MeaningTransportsError = true };
         (DirectorAdaptationService service, IDisposable scope) = BuildService(stub);
         using var _ = scope;
 
@@ -459,11 +494,20 @@ public sealed class DirectorAdaptationServiceTests
 
         DirectorAdaptationSegmentResult result = Assert.Single(batch.Segments);
         Assert.Equal(DirectorAdaptationStatus.Failed, result.Status);
+        Assert.Equal(1, stub.AdaptationCalls);
+
+        if (adaptationFails)
+        {
+            Assert.NotNull(result.Error);
+            Assert.Contains("HTTP 500", result.Error, StringComparison.Ordinal);
+            Assert.Equal(0, stub.MeaningCalls);
+            return;
+        }
+
         Assert.Equal(QaVerdict.Pass, result.TimingVerdict);
         Assert.NotNull(result.Meaning);
         Assert.Equal(MeaningVerdict.Error, result.Meaning.Verdict);
         Assert.Equal(0, result.Meaning.Usage.TotalTokens);
-        Assert.Equal(1, stub.AdaptationCalls);
         Assert.Equal(1, stub.MeaningCalls);
     }
 }
