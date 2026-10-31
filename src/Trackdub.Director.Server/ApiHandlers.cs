@@ -7,6 +7,27 @@ using static RequestValidation;
 // Runs the QA and audition pipelines for their endpoints and maps failures to HTTP results.
 internal static class ApiHandlers
 {
+    // Maps the upstream and input failures every endpoint shares to HTTP results.
+    internal static async Task<IResult> GuardAsync(Func<Task<IResult>> work)
+    {
+        try
+        {
+            return await work().ConfigureAwait(false);
+        }
+        catch (TtsApiException ex)
+        {
+            return MapTtsException(ex);
+        }
+        catch (MetaApiException ex)
+        {
+            return MapMetaException(ex);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
     // Reads a request body. Malformed JSON or invalid content becomes a 400 result instead of an exception.
     internal static async Task<(T? Value, IResult? Error)> ReadOrBadRequestAsync<T>(Func<Task<T?>> read)
         where T : class
