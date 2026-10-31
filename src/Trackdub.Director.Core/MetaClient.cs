@@ -414,6 +414,8 @@ public sealed class MetaClient : IDisposable
 
     private async Task<string> SendForBodyAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Check cancellation first, so a cancelled call does not use up a budget reservation.
+        cancellationToken.ThrowIfCancellationRequested();
         _budget?.Reserve();
         HttpResponseMessage response;
         try

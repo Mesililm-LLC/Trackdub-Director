@@ -577,6 +577,13 @@ function AuditionPanel({ seg, audition }: { seg: SegmentInput; audition: Auditio
             #{t.take_number}: {t.synthesis_note}
           </div>
         ))}
+      {audition.takes
+        .filter((t) => t.meaning_issues && t.meaning_issues.length > 0)
+        .map((t) => (
+          <div key={`${audition.id}-${t.take_number}-issues`} className="meaning-issues">
+            <strong>#{t.take_number} meaning issues:</strong> {t.meaning_issues!.join("; ")}
+          </div>
+        ))}
     </div>
   );
 }

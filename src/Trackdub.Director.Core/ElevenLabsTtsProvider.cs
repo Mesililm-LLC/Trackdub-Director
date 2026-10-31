@@ -62,13 +62,14 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
         return ParseVoices(body);
     }
 
-    public async Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, CancellationToken cancellationToken = default)
+    public async Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(voiceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentException.ThrowIfNullOrWhiteSpace(languageCode);
 
         string url = $"{ElevenLabsAuth.GetBaseUrl()}/text-to-speech/{Uri.EscapeDataString(voiceId.Trim())}?output_format=pcm_16000";
-        var payload = new SynthRequest(text, _modelId, "es");
+        var payload = new SynthRequest(text, _modelId, languageCode.Trim());
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         AddAuth(request);
         request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
@@ -156,6 +157,11 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
             var result = new List<TtsVoice>();
             foreach (JsonElement voice in voices.EnumerateArray())
             {
+                if (voice.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
                 string? id = ReadString(voice, "voice_id");
                 string? name = ReadString(voice, "name");
                 if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name))

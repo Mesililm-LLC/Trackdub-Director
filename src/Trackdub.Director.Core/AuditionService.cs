@@ -53,6 +53,12 @@ public sealed class AuditionService
         // calls to every lane.
         _tts.EnsureConfigured();
 
+        // The worst case per segment must fit the run budget, or the run would stop before its first segment.
+        if (WorstCaseCallsPerSegment() > MaxMetaCalls)
+        {
+            throw new ArgumentException($"QA_MAX_ATTEMPTS is too high: audition needs at most {MaxMetaCalls} Meta calls per run.", nameof(segments));
+        }
+
         var budget = new CallBudget(MaxMetaCalls);
         var run = new RunState(budget, _client.WithBudget(budget), sourceLanguage, targetLanguage);
         AuditionCastVoice[] cast = await CastAsync(cancellationToken).ConfigureAwait(false);
@@ -373,9 +379,9 @@ public sealed class AuditionService
         TtsSynthesisResult result;
         try
         {
-            result = await _tts.SynthesizeAsync(voice.VoiceId, take.Attempt.Translation, cancellationToken).ConfigureAwait(false);
+            result = await _tts.SynthesizeAsync(voice.VoiceId, take.Attempt.Translation, run.TargetLanguage, cancellationToken).ConfigureAwait(false);
         }
-        catch (TtsApiException ex)
+        catch (TtsApiException ex) when (!ex.IsAuthFailure)
         {
             take.Note = $"Synthesis failed: {Truncate(ex.Message)}";
             return;

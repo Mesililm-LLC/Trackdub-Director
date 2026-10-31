@@ -113,7 +113,7 @@ public sealed class AuditionServiceTests
             return Task.FromResult<IReadOnlyList<TtsVoice>>(Voices.ToArray());
         }
 
-        public Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, CancellationToken cancellationToken = default)
+        public Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, CancellationToken cancellationToken = default)
         {
             SynthCalls.Add((voiceId, text));
             double seconds = _durations.Count > 0 ? _durations.Dequeue() : 1.0;

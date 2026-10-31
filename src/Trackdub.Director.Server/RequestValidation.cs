@@ -22,7 +22,15 @@ internal static class RequestValidation
 
     internal static string? ValidateAuditionSegments(IReadOnlyList<AuditionSegmentInput> segments)
     {
-        return ValidateSegments(segments, AuditionRules);
+        string? error = ValidateSegments(segments, AuditionRules);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return segments.Any(s => s.Text.Length > MaxAuditionTextLength)
+            ? $"Each segment text must be at most {MaxAuditionTextLength} characters."
+            : null;
     }
 
     private static bool IsIncompleteAuditionSegment(AuditionSegmentInput segment)
@@ -158,6 +166,9 @@ internal static class RequestValidation
     private const int MaxAdaptationSegments = 100;
 
     private const int MaxAuditionSegments = 100;
+
+    // Bounds per-segment request size and the number of Meta and TTS calls one line can cost.
+    private const int MaxAuditionTextLength = 1000;
 
     // Each validator returns the error message to send back, or null when the request is acceptable.
     internal static string? ValidateSceneSegments(SceneSegmentInput[] segments)
