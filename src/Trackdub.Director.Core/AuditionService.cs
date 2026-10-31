@@ -47,38 +47,26 @@ public sealed class AuditionService
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceLanguage);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
-        if (segments.Count == 0)
-        {
-            throw new ArgumentException("At least one segment is required.", nameof(segments));
-        }
-
-        if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id) || s.Text is null))
-        {
-            throw new ArgumentException("Each segment must have a non-empty 'id' and 'text'.", nameof(segments));
-        }
-
-        if (segments.Select(s => s.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != segments.Count)
-        {
-            throw new ArgumentException("Duplicate segment ids are not allowed.", nameof(segments));
-        }
+        ValidateSegments(segments);
 
         // Fail closed before any network call: a missing TTS key means zero
         // calls to every lane.
         _tts.EnsureConfigured();
 
         var budget = new CallBudget(MaxMetaCalls);
-        var run = new RunState(budget, _client.WithBudget(budget));
+        var run = new RunState(budget, _client.WithBudget(budget), sourceLanguage, targetLanguage);
         AuditionCastVoice[] cast = await CastAsync(cancellationToken).ConfigureAwait(false);
         var castBySpeaker = cast.ToDictionary(c => c.SpeakerId, StringComparer.OrdinalIgnoreCase);
 
-        Dictionary<string, QaSegmentReport> qaById = await GenerateCandidatesAsync(segments, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, QaSegmentReport> qaById = await GenerateCandidatesAsync(segments, run, cancellationToken).ConfigureAwait(false);
 
         var segmentReports = new List<AuditionSegmentReport>(segments.Count);
         foreach (AuditionSegmentInput segment in segments)
         {
+            AuditionCastVoice? castVoice = ResolveCastVoice(segment, castBySpeaker);
             segmentReports.Add(qaById.TryGetValue(segment.Id, out QaSegmentReport? qa)
-                ? await ProcessSegmentAsync(segment, qa, castBySpeaker, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false)
-                : SkippedSegmentReport(segment, castBySpeaker, sourceLanguage));
+                ? await ProcessSegmentAsync(new SegmentCandidates(segment, qa, castVoice), run, cancellationToken).ConfigureAwait(false)
+                : SkippedSegmentReport(segment, castVoice, run));
         }
 
         var totals = new AuditionTotals(
@@ -93,6 +81,29 @@ public sealed class AuditionService
             MetaCapHit: run.MetaCapHit);
 
         return new AuditionReport(sourceLanguage, targetLanguage, cast, segmentReports.ToArray(), totals);
+    }
+
+    private static void ValidateSegments(IReadOnlyList<AuditionSegmentInput> segments)
+    {
+        if (segments.Count == 0)
+        {
+            throw new ArgumentException("At least one segment is required.", nameof(segments));
+        }
+
+        if (segments.Any(IsIncomplete))
+        {
+            throw new ArgumentException("Each segment must have a non-empty 'id' and 'text'.", nameof(segments));
+        }
+
+        if (segments.Select(s => s.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != segments.Count)
+        {
+            throw new ArgumentException("Duplicate segment ids are not allowed.", nameof(segments));
+        }
+    }
+
+    private static bool IsIncomplete(AuditionSegmentInput segment)
+    {
+        return segment is null || string.IsNullOrWhiteSpace(segment.Id) || segment.Text is null;
     }
 
     private async Task<AuditionCastVoice[]> CastAsync(CancellationToken cancellationToken)
@@ -133,8 +144,6 @@ public sealed class AuditionService
 
     private async Task<Dictionary<string, QaSegmentReport>> GenerateCandidatesAsync(
         IReadOnlyList<AuditionSegmentInput> segments,
-        string sourceLanguage,
-        string targetLanguage,
         RunState run,
         CancellationToken cancellationToken)
     {
@@ -151,10 +160,7 @@ public sealed class AuditionService
             QaSegmentReport qa;
             try
             {
-                QaReport report = await new QaService(run.Client, _options)
-                    .RunAsync([new QaSegmentInput(segment.Id, segment.Text, segment.DurationSeconds)], sourceLanguage, targetLanguage, cancellationToken)
-                    .ConfigureAwait(false);
-                qa = report.Segments.Single();
+                qa = await RunQaForSegmentAsync(segment, run, cancellationToken).ConfigureAwait(false);
             }
             catch (MetaBudgetExhaustedException)
             {
@@ -167,6 +173,17 @@ public sealed class AuditionService
         }
 
         return qaById;
+    }
+
+    private async Task<QaSegmentReport> RunQaForSegmentAsync(
+        AuditionSegmentInput segment,
+        RunState run,
+        CancellationToken cancellationToken)
+    {
+        QaReport report = await new QaService(run.Client, _options)
+            .RunAsync([new QaSegmentInput(segment.Id, segment.Text, segment.DurationSeconds)], run.SourceLanguage, run.TargetLanguage, cancellationToken)
+            .ConfigureAwait(false);
+        return report.Segments.Single();
     }
 
     private static void AccountQaCalls(QaSegmentReport segment, RunState run)
@@ -224,16 +241,16 @@ public sealed class AuditionService
     // uncast, with no takes, rather than dropped from the batch.
     private AuditionSegmentReport SkippedSegmentReport(
         AuditionSegmentInput segment,
-        IReadOnlyDictionary<string, AuditionCastVoice> castBySpeaker,
-        string sourceLanguage)
+        AuditionCastVoice? castVoice,
+        RunState run)
     {
         double windowSeconds = QaService.ResolveWindowSeconds(
-            new QaSegmentInput(segment.Id, segment.Text, segment.DurationSeconds), _options, sourceLanguage);
+            new QaSegmentInput(segment.Id, segment.Text, segment.DurationSeconds), _options, run.SourceLanguage);
         return new AuditionSegmentReport(
             segment.Id,
             segment.Text,
             NullIfBlank(segment.SpeakerId),
-            ResolveCastVoice(segment, castBySpeaker),
+            castVoice,
             windowSeconds,
             [],
             Cast: false,
@@ -242,40 +259,36 @@ public sealed class AuditionService
     }
 
     private async Task<AuditionSegmentReport> ProcessSegmentAsync(
-        AuditionSegmentInput segment,
-        QaSegmentReport qa,
-        IReadOnlyDictionary<string, AuditionCastVoice> castBySpeaker,
-        string sourceLanguage,
-        string targetLanguage,
+        SegmentCandidates work,
         RunState run,
         CancellationToken cancellationToken)
     {
-        AuditionCastVoice? castVoice = ResolveCastVoice(segment, castBySpeaker);
-        QaAttemptReport[] candidates = SelectCandidates(qa);
+        QaAttemptReport[] candidates = SelectCandidates(work.Qa);
         var takes = new List<TakeWork>(candidates.Length);
 
         foreach (QaAttemptReport attempt in candidates)
         {
-            takes.Add(await ResolveMeaningAsync(segment, attempt, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false));
+            takes.Add(await ResolveMeaningAsync(work.Segment, attempt, run, cancellationToken).ConfigureAwait(false));
         }
 
         foreach (TakeWork take in takes)
         {
-            await SynthesizeAsync(segment, take, castVoice, qa.WindowSeconds, run, cancellationToken).ConfigureAwait(false);
+            take.Cast = work.Cast;
+            await SynthesizeAsync(take, run, cancellationToken).ConfigureAwait(false);
         }
 
-        TakeWork? winner = PickWinner(takes, qa.WindowSeconds);
-        AuditionTakeReport[] reports = takes.Select(t => t.ToReport(winner, segment.Id)).ToArray();
+        TakeWork? winner = PickWinner(takes, work.Qa.WindowSeconds);
+        AuditionTakeReport[] reports = takes.Select(t => t.ToReport(winner, work.Segment.Id)).ToArray();
         return new AuditionSegmentReport(
-            segment.Id,
-            segment.Text,
-            NullIfBlank(segment.SpeakerId),
-            castVoice,
-            qa.WindowSeconds,
+            work.Segment.Id,
+            work.Segment.Text,
+            NullIfBlank(work.Segment.SpeakerId),
+            work.Cast,
+            work.Qa.WindowSeconds,
             reports,
             Cast: winner is not null,
             WinnerTakeNumber: winner?.TakeNumber,
-            WinnerFileName: winner?.FileName(segment.Id));
+            WinnerFileName: winner?.FileName(work.Segment.Id));
     }
 
     private static AuditionCastVoice? ResolveCastVoice(
@@ -289,18 +302,13 @@ public sealed class AuditionService
     private async Task<TakeWork> ResolveMeaningAsync(
         AuditionSegmentInput segment,
         QaAttemptReport attempt,
-        string sourceLanguage,
-        string targetLanguage,
         RunState run,
         CancellationToken cancellationToken)
     {
         var work = new TakeWork(attempt);
         if (attempt.MeaningVerdict != MeaningVerdict.NotEvaluated)
         {
-            work.MeaningVerdict = attempt.MeaningVerdict;
-            work.MeaningIssues = attempt.MeaningIssues;
-            work.MeaningExplanation = attempt.MeaningExplanation;
-            work.MeaningTokens = attempt.MeaningTotalTokens;
+            work.ApplyMeaning(attempt.MeaningVerdict, attempt.MeaningIssues, attempt.MeaningExplanation, attempt.MeaningTotalTokens);
             return work;
         }
 
@@ -308,76 +316,62 @@ public sealed class AuditionService
         // audition gate still needs a verdict before any synthesis decision.
         if (run.MetaCapHit)
         {
-            work.MeaningVerdict = MeaningVerdict.NotEvaluated;
             return work;
         }
 
         run.MetaCalls++;
-        MeaningCheckResult meaning;
+        MeaningCheckResult? meaning = await CheckMeaningAsync(segment, attempt, run, cancellationToken).ConfigureAwait(false);
+        if (meaning is null)
+        {
+            return work;
+        }
+
+        int tokens = meaning.Usage?.TotalTokens ?? 0;
+        run.MeaningTokens += tokens;
+        work.ApplyMeaning(meaning.Verdict, meaning.Issues, meaning.Explanation, tokens);
+        return work;
+    }
+
+    // Null when the run's budget is spent: the take then stays NotEvaluated.
+    private async Task<MeaningCheckResult?> CheckMeaningAsync(
+        AuditionSegmentInput segment,
+        QaAttemptReport attempt,
+        RunState run,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            meaning = await run.Client.CheckMeaningAsync(
-                new MetaClient.MeaningCheckRequest(segment.Text, attempt.Translation, sourceLanguage, targetLanguage),
+            return await run.Client.CheckMeaningAsync(
+                new MetaClient.MeaningCheckRequest(segment.Text, attempt.Translation, run.SourceLanguage, run.TargetLanguage),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (MetaBudgetExhaustedException)
         {
             run.MetaCapHit = true;
-            work.MeaningVerdict = MeaningVerdict.NotEvaluated;
-            return work;
+            return null;
         }
         catch (Exception ex) when (
             ex is MetaApiException or HttpRequestException or InvalidOperationException
             || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
-            meaning = MeaningGate.ForError(ex.Message, attempt.ModelId, null, GetEndpointHost());
+            return MeaningGate.ForError(ex.Message, attempt.ModelId, null, GetEndpointHost());
         }
-
-        run.MeaningTokens += meaning.Usage?.TotalTokens ?? 0;
-        work.MeaningVerdict = meaning.Verdict;
-        work.MeaningIssues = meaning.Issues;
-        work.MeaningExplanation = meaning.Explanation;
-        work.MeaningTokens = meaning.Usage?.TotalTokens ?? 0;
-        return work;
     }
 
-    private async Task SynthesizeAsync(
-        AuditionSegmentInput segment,
-        TakeWork take,
-        AuditionCastVoice? castVoice,
-        double windowSeconds,
-        RunState run,
-        CancellationToken cancellationToken)
+    private async Task SynthesizeAsync(TakeWork take, RunState run, CancellationToken cancellationToken)
     {
-        if (take.MeaningVerdict != MeaningVerdict.Pass)
+        string? skipReason = SkipReason(take, run);
+        if (skipReason is not null)
         {
-            take.Note = "Meaning gate did not pass; not synthesized.";
+            take.Note = skipReason;
             return;
         }
 
-        if (castVoice is null)
-        {
-            take.Note = "No cast voice for this speaker; not synthesized.";
-            return;
-        }
-
-        if (run.ElevenLabsCapHit || run.MetaCapHit)
-        {
-            take.Note = "Run cap already hit; synthesis stopped.";
-            return;
-        }
-
-        if (run.ElevenLabsCharacters + take.Attempt.Translation.Length > MaxElevenLabsCharacters)
-        {
-            run.ElevenLabsCapHit = true;
-            take.Note = $"ElevenLabs character cap ({MaxElevenLabsCharacters}) would be exceeded; synthesis stopped for the run.";
-            return;
-        }
-
+        AuditionCastVoice voice = take.Cast!;
         TtsSynthesisResult result;
         try
         {
-            result = await _tts.SynthesizeAsync(castVoice.VoiceId, take.Attempt.Translation, cancellationToken).ConfigureAwait(false);
+            result = await _tts.SynthesizeAsync(voice.VoiceId, take.Attempt.Translation, cancellationToken).ConfigureAwait(false);
         }
         catch (TtsApiException ex)
         {
@@ -390,13 +384,46 @@ public sealed class AuditionService
             return;
         }
 
+        RecordSynthesis(take, result, run);
+    }
+
+    // The reason a take is not synthesized, or null when it should be. Hitting the
+    // character cap also stops synthesis for the rest of the run.
+    private string? SkipReason(TakeWork take, RunState run)
+    {
+        if (take.MeaningVerdict != MeaningVerdict.Pass)
+        {
+            return "Meaning gate did not pass; not synthesized.";
+        }
+
+        if (take.Cast is null)
+        {
+            return "No cast voice for this speaker; not synthesized.";
+        }
+
+        if (run.ElevenLabsCapHit || run.MetaCapHit)
+        {
+            return "Run cap already hit; synthesis stopped.";
+        }
+
+        if (run.ElevenLabsCharacters + take.Attempt.Translation.Length > MaxElevenLabsCharacters)
+        {
+            run.ElevenLabsCapHit = true;
+            return $"ElevenLabs character cap ({MaxElevenLabsCharacters}) would be exceeded; synthesis stopped for the run.";
+        }
+
+        return null;
+    }
+
+    private void RecordSynthesis(TakeWork take, TtsSynthesisResult result, RunState run)
+    {
         take.Synthesized = true;
         take.Characters = result.CharactersBilled;
         run.ElevenLabsCharacters += result.CharactersBilled;
         run.TakesSynthesized++;
         take.MeasuredSeconds = AudioDuration.Seconds(result.AudioBytes, _tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
         take.AudioBytes = AudioDuration.ToWav(result.AudioBytes, _tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
-        take.TimingVerdict = DurationEstimator.Fits(take.MeasuredSeconds.Value, windowSeconds, _options.ToleranceFraction)
+        take.TimingVerdict = DurationEstimator.Fits(take.MeasuredSeconds.Value, take.WindowSeconds, _options.ToleranceFraction)
             ? AuditionTimingVerdict.Pass
             : AuditionTimingVerdict.Fail;
     }
@@ -405,14 +432,9 @@ public sealed class AuditionService
     {
         TakeWork? best = null;
         double bestError = double.MaxValue;
-        foreach (TakeWork take in takes)
+        foreach (TakeWork take in takes.Where(IsWinnable))
         {
-            if (take.MeaningVerdict != MeaningVerdict.Pass || take.TimingVerdict != AuditionTimingVerdict.Pass || take.MeasuredSeconds is null)
-            {
-                continue;
-            }
-
-            double error = Math.Abs(take.MeasuredSeconds.Value - windowSeconds);
+            double error = Math.Abs(take.MeasuredSeconds!.Value - windowSeconds);
             if (error < bestError)
             {
                 bestError = error;
@@ -421,6 +443,13 @@ public sealed class AuditionService
         }
 
         return best;
+    }
+
+    private static bool IsWinnable(TakeWork take)
+    {
+        return take.MeaningVerdict == MeaningVerdict.Pass
+            && take.TimingVerdict == AuditionTimingVerdict.Pass
+            && take.MeasuredSeconds is not null;
     }
 
     /// <summary>
@@ -459,18 +488,27 @@ public sealed class AuditionService
         return message.Length > 300 ? message[..300] : message;
     }
 
+    // One segment's QA result, with the cast voice resolved for its speaker.
+    private sealed record SegmentCandidates(AuditionSegmentInput Segment, QaSegmentReport Qa, AuditionCastVoice? Cast);
+
     private sealed class RunState
     {
-        public RunState(CallBudget budget, MetaClient client)
+        public RunState(CallBudget budget, MetaClient client, string sourceLanguage, string targetLanguage)
         {
             Budget = budget;
             Client = client;
+            SourceLanguage = sourceLanguage;
+            TargetLanguage = targetLanguage;
         }
 
         public CallBudget Budget { get; }
 
         // Meta client that charges every request in this run to Budget.
         public MetaClient Client { get; }
+
+        public string SourceLanguage { get; }
+
+        public string TargetLanguage { get; }
 
         public int MetaCalls;
         public int TranslationTokens;
@@ -492,13 +530,17 @@ public sealed class AuditionService
 
         public int TakeNumber => Attempt.AttemptNumber;
 
-        public MeaningVerdict MeaningVerdict { get; set; } = MeaningVerdict.NotEvaluated;
+        public double WindowSeconds => Attempt.WindowSeconds;
 
-        public string[]? MeaningIssues { get; set; }
+        public AuditionCastVoice? Cast { get; set; }
 
-        public string? MeaningExplanation { get; set; }
+        public MeaningVerdict MeaningVerdict { get; private set; } = MeaningVerdict.NotEvaluated;
 
-        public int MeaningTokens { get; set; }
+        public string[]? MeaningIssues { get; private set; }
+
+        public string? MeaningExplanation { get; private set; }
+
+        public int MeaningTokens { get; private set; }
 
         public bool Synthesized { get; set; }
 
@@ -511,6 +553,14 @@ public sealed class AuditionService
         public string? Note { get; set; }
 
         public byte[]? AudioBytes { get; set; }
+
+        public void ApplyMeaning(MeaningVerdict verdict, string[]? issues, string? explanation, int tokens)
+        {
+            MeaningVerdict = verdict;
+            MeaningIssues = issues;
+            MeaningExplanation = explanation;
+            MeaningTokens = tokens;
+        }
 
         public string FileName(string segmentId)
         {

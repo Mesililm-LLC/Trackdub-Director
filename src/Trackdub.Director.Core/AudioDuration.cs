@@ -63,17 +63,25 @@ public static class AudioDuration
 
     private static void ValidatePcm(int sampleRate, int channels, int bitsPerSample)
     {
-        if (sampleRate <= 0 || channels <= 0 || bitsPerSample <= 0 || bitsPerSample % 8 != 0)
+        if (!IsWholeBytePcm(sampleRate, channels, bitsPerSample))
         {
             throw new ArgumentOutOfRangeException(nameof(sampleRate), "Declared PCM parameters must be positive with whole-byte samples.");
         }
     }
 
+    private static bool IsWholeBytePcm(int sampleRate, int channels, int bitsPerSample)
+    {
+        return sampleRate > 0 && channels > 0 && bitsPerSample > 0 && bitsPerSample % 8 == 0;
+    }
+
     private static bool IsWav(byte[] bytes)
     {
-        return bytes.Length >= 12
-            && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
-            && bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';
+        return bytes.Length >= 12 && HasTag(bytes, 0, "RIFF") && HasTag(bytes, 8, "WAVE");
+    }
+
+    private static bool HasTag(byte[] bytes, int offset, string tag)
+    {
+        return Encoding.ASCII.GetString(bytes, offset, tag.Length) == tag;
     }
 
     private static double WavSeconds(byte[] wav)
