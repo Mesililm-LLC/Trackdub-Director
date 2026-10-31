@@ -407,8 +407,9 @@ public sealed class AuditionService
 
             QaAttemptReport attempt = SyntheticAttempt(work, run, nextNumber++, QaAttemptKind.Alternate, text, first ? variantsTokens : 0);
             first = false;
-            TakeWork take = await ResolveMeaningAsync(work.Segment, attempt, run, cancellationToken).ConfigureAwait(false);
+            int tokenAllocation = first ? variantsTokens : 0;
             take.Cast = work.Cast;
+            QaAttemptReport attempt = SyntheticAttempt(work, run, nextNumber++, QaAttemptKind.Alternate, text, tokenAllocation);
             await SynthesizeAsync(take, run, cancellationToken).ConfigureAwait(false);
             takes.Add(take);
         }
