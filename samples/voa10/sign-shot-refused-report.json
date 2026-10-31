@@ -1,7 +1,7 @@
 {
   "stage": "static-shot-composite",
   "status": "Refused",
-  "reason": "Frame 58 (t=2.320s) box SSIM 0.2847 (largest block luma shift 214.2) fails the 0.95 mean SSIM / 30 luma-shift gate: the sign region changed, so one repaint cannot stand in for this shot.",
+  "reason": "Frame 58 (t=2.320s) box SSIM 0.284672 (largest block luma shift 214.214) fails the 0.95 mean SSIM / 30 luma-shift gate: the sign region changed, so one repaint cannot stand in for this shot.",
   "video": "samples/voa10/media/demo/demo-dub.mp4",
   "reference_frame": "samples/voa10/frames/hero-0242.jpg",
   "localised_frame": "samples/voa10/frames/localised/hero-0242-cafeteria.png",
@@ -16,20 +16,20 @@
     "end_seconds": 12.76
   },
   "fps": 25,
-  "metric": "luma SSIM over non-overlapping 8x8 blocks of the box region, frame vs reference frame; gate on the block mean SSIM and on the largest single-block mean-luma shift",
+  "metric": "luma SSIM over 8x8 blocks covering the whole box region (trailing strip measured by an edge-anchored block), frame vs reference frame; gate on the block mean SSIM and on the largest single-block mean-luma shift",
   "min_ssim_threshold": 0.95,
   "max_block_luma_shift_threshold": 30,
   "frames_checked": 261,
-  "ssim_min": 0.2847,
+  "ssim_min": 0.2846716187898415,
   "ssim_min_frame": 58,
-  "ssim_mean": 0.9908,
-  "block_luma_shift_max": 214.21,
+  "ssim_mean": 0.9899,
+  "block_luma_shift_max": 214.21398437500002,
   "block_luma_shift_max_frame": 58,
   "first_failing_frame": {
     "frame_index": 58,
     "time_seconds": 2.32,
-    "ssim": 0.2847,
-    "max_block_luma_shift": 214.21,
+    "ssim": 0.2846716187898415,
+    "max_block_luma_shift": 214.21398437500002,
     "pass": false
   },
   "frames_composited": 0,
@@ -41,1833 +41,1833 @@
     "outside_box_diff_max is counted on decoded RGB frames before encoding; the h264 output is lossy everywhere, including outside the box.",
     "Frame times assume a constant frame rate (index / fps)."
   ],
-  "timestamp_utc": "2026-10-31T17:44:53.1219624Z",
+  "timestamp_utc": "2026-10-31T17:58:57.5192816Z",
   "frames": [
     {
       "frame_index": 58,
       "time_seconds": 2.32,
-      "ssim": 0.2847,
-      "max_block_luma_shift": 214.21,
+      "ssim": 0.2846716187898415,
+      "max_block_luma_shift": 214.21398437500002,
       "pass": false
     },
     {
       "frame_index": 59,
       "time_seconds": 2.36,
-      "ssim": 0.9939,
-      "max_block_luma_shift": 7.09,
+      "ssim": 0.9928078828422077,
+      "max_block_luma_shift": 7.090499999999963,
       "pass": true
     },
     {
       "frame_index": 60,
       "time_seconds": 2.4,
-      "ssim": 0.994,
-      "max_block_luma_shift": 7.09,
+      "ssim": 0.9930023399635394,
+      "max_block_luma_shift": 7.090499999999963,
       "pass": true
     },
     {
       "frame_index": 61,
       "time_seconds": 2.44,
-      "ssim": 0.9942,
-      "max_block_luma_shift": 7.09,
+      "ssim": 0.9932112597968529,
+      "max_block_luma_shift": 7.090499999999963,
       "pass": true
     },
     {
       "frame_index": 62,
       "time_seconds": 2.48,
-      "ssim": 0.9943,
-      "max_block_luma_shift": 7.09,
+      "ssim": 0.9932814429644808,
+      "max_block_luma_shift": 7.090499999999963,
       "pass": true
     },
     {
       "frame_index": 63,
       "time_seconds": 2.52,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 5.5,
+      "ssim": 0.9955447881962478,
+      "max_block_luma_shift": 5.50220312499988,
       "pass": true
     },
     {
       "frame_index": 64,
       "time_seconds": 2.56,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 5.51,
+      "ssim": 0.9955588969262049,
+      "max_block_luma_shift": 5.510515624999897,
       "pass": true
     },
     {
       "frame_index": 65,
       "time_seconds": 2.6,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 5.51,
+      "ssim": 0.9955470282397868,
+      "max_block_luma_shift": 5.510515624999897,
       "pass": true
     },
     {
       "frame_index": 66,
       "time_seconds": 2.64,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 5.51,
+      "ssim": 0.995561455282538,
+      "max_block_luma_shift": 5.510515624999897,
       "pass": true
     },
     {
       "frame_index": 67,
       "time_seconds": 2.68,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 5.51,
+      "ssim": 0.9955668331906016,
+      "max_block_luma_shift": 5.50601562499989,
       "pass": true
     },
     {
       "frame_index": 68,
       "time_seconds": 2.72,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.21,
+      "ssim": 0.9956470664568223,
+      "max_block_luma_shift": 5.206453124999911,
       "pass": true
     },
     {
       "frame_index": 69,
       "time_seconds": 2.76,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.1,
+      "ssim": 0.995646853683207,
+      "max_block_luma_shift": 5.098078124999887,
       "pass": true
     },
     {
       "frame_index": 70,
       "time_seconds": 2.8,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.85,
+      "ssim": 0.9955575540792226,
+      "max_block_luma_shift": 4.853609374999877,
       "pass": true
     },
     {
       "frame_index": 71,
       "time_seconds": 2.84,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.02,
+      "ssim": 0.9955816081234915,
+      "max_block_luma_shift": 5.021078124999832,
       "pass": true
     },
     {
       "frame_index": 72,
       "time_seconds": 2.88,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.02,
+      "ssim": 0.9956230299868811,
+      "max_block_luma_shift": 5.021078124999832,
       "pass": true
     },
     {
       "frame_index": 73,
       "time_seconds": 2.92,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956473268622369,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 74,
       "time_seconds": 2.96,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956404381574792,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 75,
       "time_seconds": 3,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956266705321781,
+      "max_block_luma_shift": 5.0286562499998695,
       "pass": true
     },
     {
       "frame_index": 76,
       "time_seconds": 3.04,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956467935499417,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 77,
       "time_seconds": 3.08,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956482134244743,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 78,
       "time_seconds": 3.12,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956431169662325,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 79,
       "time_seconds": 3.16,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956303406563991,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 80,
       "time_seconds": 3.2,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956550855535986,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 81,
       "time_seconds": 3.24,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.995659235709036,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 82,
       "time_seconds": 3.28,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956454844833617,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 83,
       "time_seconds": 3.32,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 5.03,
+      "ssim": 0.9956061699254313,
+      "max_block_luma_shift": 5.027671874999811,
       "pass": true
     },
     {
       "frame_index": 84,
       "time_seconds": 3.36,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.78,
+      "ssim": 0.9956300763335226,
+      "max_block_luma_shift": 4.777671874999811,
       "pass": true
     },
     {
       "frame_index": 85,
       "time_seconds": 3.4,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.78,
+      "ssim": 0.9951471552287122,
+      "max_block_luma_shift": 4.777671874999811,
       "pass": true
     },
     {
       "frame_index": 86,
       "time_seconds": 3.44,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.72,
+      "ssim": 0.9948983656324721,
+      "max_block_luma_shift": 4.715171874999811,
       "pass": true
     },
     {
       "frame_index": 87,
       "time_seconds": 3.48,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.73,
+      "ssim": 0.9948664554948129,
+      "max_block_luma_shift": 4.730796874999811,
       "pass": true
     },
     {
       "frame_index": 88,
       "time_seconds": 3.52,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.57,
+      "ssim": 0.9951579963011359,
+      "max_block_luma_shift": 4.574546874999811,
       "pass": true
     },
     {
       "frame_index": 89,
       "time_seconds": 3.56,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.51,
+      "ssim": 0.9953463635923824,
+      "max_block_luma_shift": 4.512046874999811,
       "pass": true
     },
     {
       "frame_index": 90,
       "time_seconds": 3.6,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.45,
+      "ssim": 0.9955031565104496,
+      "max_block_luma_shift": 4.449546874999811,
       "pass": true
     },
     {
       "frame_index": 91,
       "time_seconds": 3.64,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9955632994557181,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 92,
       "time_seconds": 3.68,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.995661266070005,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 93,
       "time_seconds": 3.72,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956932252348826,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 94,
       "time_seconds": 3.76,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956845474939264,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 95,
       "time_seconds": 3.8,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956854122559062,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 96,
       "time_seconds": 3.84,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956864795588848,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 97,
       "time_seconds": 3.88,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956858034535357,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 98,
       "time_seconds": 3.92,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956885608559604,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 99,
       "time_seconds": 3.96,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956867063192352,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 100,
       "time_seconds": 4,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956921947269796,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 101,
       "time_seconds": 4.04,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956922735152416,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 102,
       "time_seconds": 4.08,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.995695233247518,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 103,
       "time_seconds": 4.12,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956901485685242,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 104,
       "time_seconds": 4.16,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956900097773096,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 105,
       "time_seconds": 4.2,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956870176527428,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 106,
       "time_seconds": 4.24,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.995688255055734,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 107,
       "time_seconds": 4.28,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9956052401835509,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 108,
       "time_seconds": 4.32,
-      "ssim": 0.9956,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9937665616416025,
+      "max_block_luma_shift": 4.999281250000045,
       "pass": true
     },
     {
       "frame_index": 109,
       "time_seconds": 4.36,
-      "ssim": 0.9955,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9932569042484548,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 110,
       "time_seconds": 4.4,
-      "ssim": 0.9955,
-      "max_block_luma_shift": 4.56,
+      "ssim": 0.9933307004160821,
+      "max_block_luma_shift": 4.558921874999811,
       "pass": true
     },
     {
       "frame_index": 111,
       "time_seconds": 4.44,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 4.61,
+      "ssim": 0.9932863206849213,
+      "max_block_luma_shift": 4.605984374999792,
       "pass": true
     },
     {
       "frame_index": 112,
       "time_seconds": 4.48,
-      "ssim": 0.9955,
-      "max_block_luma_shift": 4.61,
+      "ssim": 0.9933698101092733,
+      "max_block_luma_shift": 4.605984374999792,
       "pass": true
     },
     {
       "frame_index": 113,
       "time_seconds": 4.52,
-      "ssim": 0.9934,
-      "max_block_luma_shift": 5.82,
+      "ssim": 0.9908466111962161,
+      "max_block_luma_shift": 5.818218749999829,
       "pass": true
     },
     {
       "frame_index": 114,
       "time_seconds": 4.56,
-      "ssim": 0.9934,
-      "max_block_luma_shift": 5.82,
+      "ssim": 0.9908911081568775,
+      "max_block_luma_shift": 5.818218749999829,
       "pass": true
     },
     {
       "frame_index": 115,
       "time_seconds": 4.6,
-      "ssim": 0.9934,
-      "max_block_luma_shift": 5.82,
+      "ssim": 0.9908896207894561,
+      "max_block_luma_shift": 5.818218749999829,
       "pass": true
     },
     {
       "frame_index": 116,
       "time_seconds": 4.64,
-      "ssim": 0.9933,
-      "max_block_luma_shift": 5.82,
+      "ssim": 0.9909212103694197,
+      "max_block_luma_shift": 5.823828124999835,
       "pass": true
     },
     {
       "frame_index": 117,
       "time_seconds": 4.68,
-      "ssim": 0.9933,
-      "max_block_luma_shift": 5.86,
+      "ssim": 0.9907067469526638,
+      "max_block_luma_shift": 5.855078124999835,
       "pass": true
     },
     {
       "frame_index": 118,
       "time_seconds": 4.72,
-      "ssim": 0.9934,
-      "max_block_luma_shift": 5.86,
+      "ssim": 0.9903891173014668,
+      "max_block_luma_shift": 5.855078124999835,
       "pass": true
     },
     {
       "frame_index": 119,
       "time_seconds": 4.76,
-      "ssim": 0.9933,
-      "max_block_luma_shift": 5.93,
+      "ssim": 0.9901919152034576,
+      "max_block_luma_shift": 6.265718750000033,
       "pass": true
     },
     {
       "frame_index": 120,
       "time_seconds": 4.8,
-      "ssim": 0.9934,
-      "max_block_luma_shift": 5.87,
+      "ssim": 0.99009225382856,
+      "max_block_luma_shift": 5.870703124999864,
       "pass": true
     },
     {
       "frame_index": 121,
       "time_seconds": 4.84,
-      "ssim": 0.9935,
-      "max_block_luma_shift": 5.97,
+      "ssim": 0.9900863886247624,
+      "max_block_luma_shift": 5.965937499999882,
       "pass": true
     },
     {
       "frame_index": 122,
       "time_seconds": 4.88,
-      "ssim": 0.9936,
-      "max_block_luma_shift": 5.94,
+      "ssim": 0.9905021230614983,
+      "max_block_luma_shift": 5.936734374999901,
       "pass": true
     },
     {
       "frame_index": 123,
       "time_seconds": 4.92,
-      "ssim": 0.9936,
-      "max_block_luma_shift": 6.05,
+      "ssim": 0.9910637169085003,
+      "max_block_luma_shift": 6.050328124999908,
       "pass": true
     },
     {
       "frame_index": 124,
       "time_seconds": 4.96,
-      "ssim": 0.9937,
-      "max_block_luma_shift": 6,
+      "ssim": 0.9913540048604425,
+      "max_block_luma_shift": 5.999093749999872,
       "pass": true
     },
     {
       "frame_index": 125,
       "time_seconds": 5,
-      "ssim": 0.9937,
-      "max_block_luma_shift": 5.87,
+      "ssim": 0.9914029090698417,
+      "max_block_luma_shift": 5.8667187499999045,
       "pass": true
     },
     {
       "frame_index": 126,
       "time_seconds": 5.04,
-      "ssim": 0.9938,
-      "max_block_luma_shift": 5.8,
+      "ssim": 0.9916100519771555,
+      "max_block_luma_shift": 5.8042187499999045,
       "pass": true
     },
     {
       "frame_index": 127,
       "time_seconds": 5.08,
-      "ssim": 0.9939,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9918244882884087,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 128,
       "time_seconds": 5.12,
-      "ssim": 0.9939,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9919946345960986,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 129,
       "time_seconds": 5.16,
-      "ssim": 0.9939,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9920181432622269,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 130,
       "time_seconds": 5.2,
-      "ssim": 0.9941,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9924140992397797,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 131,
       "time_seconds": 5.24,
-      "ssim": 0.9942,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9925599653611304,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 132,
       "time_seconds": 5.28,
-      "ssim": 0.9944,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9929086347182557,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 133,
       "time_seconds": 5.32,
-      "ssim": 0.9945,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9931197584482832,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 134,
       "time_seconds": 5.36,
-      "ssim": 0.9948,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9935927675692318,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 135,
       "time_seconds": 5.4,
-      "ssim": 0.9949,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9937931769593449,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 136,
       "time_seconds": 5.44,
-      "ssim": 0.9949,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9938242301701289,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 137,
       "time_seconds": 5.48,
-      "ssim": 0.995,
-      "max_block_luma_shift": 5.79,
+      "ssim": 0.9938707156940486,
+      "max_block_luma_shift": 5.7885937499999045,
       "pass": true
     },
     {
       "frame_index": 138,
       "time_seconds": 5.52,
-      "ssim": 0.995,
-      "max_block_luma_shift": 4.89,
+      "ssim": 0.993554577115016,
+      "max_block_luma_shift": 4.890343749999886,
       "pass": true
     },
     {
       "frame_index": 139,
       "time_seconds": 5.56,
-      "ssim": 0.995,
-      "max_block_luma_shift": 4.77,
+      "ssim": 0.9933818577119753,
+      "max_block_luma_shift": 5.009468750000018,
       "pass": true
     },
     {
       "frame_index": 140,
       "time_seconds": 5.6,
-      "ssim": 0.9951,
-      "max_block_luma_shift": 4.12,
+      "ssim": 0.9935066196768134,
+      "max_block_luma_shift": 4.516687499999989,
       "pass": true
     },
     {
       "frame_index": 141,
       "time_seconds": 5.64,
-      "ssim": 0.9952,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.9938562443900472,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 142,
       "time_seconds": 5.68,
-      "ssim": 0.9953,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.9939478832555058,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 143,
       "time_seconds": 5.72,
-      "ssim": 0.9953,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.9941990541457854,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 144,
       "time_seconds": 5.76,
-      "ssim": 0.9953,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.9944153234255304,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 145,
       "time_seconds": 5.8,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.994532606897601,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 146,
       "time_seconds": 5.84,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.9945479589451893,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 147,
       "time_seconds": 5.88,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 4.01,
+      "ssim": 0.9945872851271972,
+      "max_block_luma_shift": 4.008187499999963,
       "pass": true
     },
     {
       "frame_index": 148,
       "time_seconds": 5.92,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.77,
+      "ssim": 0.9946199112256305,
+      "max_block_luma_shift": 3.774640624999904,
       "pass": true
     },
     {
       "frame_index": 149,
       "time_seconds": 5.96,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.77,
+      "ssim": 0.994622294257839,
+      "max_block_luma_shift": 3.774640624999904,
       "pass": true
     },
     {
       "frame_index": 150,
       "time_seconds": 6,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.76,
+      "ssim": 0.99462513184515,
+      "max_block_luma_shift": 3.759015624999904,
       "pass": true
     },
     {
       "frame_index": 151,
       "time_seconds": 6.04,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946128708851152,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 152,
       "time_seconds": 6.08,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946262392098779,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 153,
       "time_seconds": 6.12,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946241493726965,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 154,
       "time_seconds": 6.16,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946245938658487,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 155,
       "time_seconds": 6.2,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946163431235694,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 156,
       "time_seconds": 6.24,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946176442239829,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 157,
       "time_seconds": 6.28,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946185556631951,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 158,
       "time_seconds": 6.32,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946176564708774,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 159,
       "time_seconds": 6.36,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946168139583951,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 160,
       "time_seconds": 6.4,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9946794211597679,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 161,
       "time_seconds": 6.44,
-      "ssim": 0.9954,
-      "max_block_luma_shift": 3.85,
+      "ssim": 0.9947242255370339,
+      "max_block_luma_shift": 3.8539687499998934,
       "pass": true
     },
     {
       "frame_index": 162,
       "time_seconds": 6.48,
-      "ssim": 0.9955,
-      "max_block_luma_shift": 3.63,
+      "ssim": 0.9947160342626142,
+      "max_block_luma_shift": 3.6331874999999627,
       "pass": true
     },
     {
       "frame_index": 163,
       "time_seconds": 6.52,
-      "ssim": 0.9981,
-      "max_block_luma_shift": 2.1,
+      "ssim": 0.9978043619395977,
+      "max_block_luma_shift": 2.1008750000000234,
       "pass": true
     },
     {
       "frame_index": 164,
       "time_seconds": 6.56,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.1,
+      "ssim": 0.9977907513706745,
+      "max_block_luma_shift": 2.1008750000000234,
       "pass": true
     },
     {
       "frame_index": 165,
       "time_seconds": 6.6,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.1,
+      "ssim": 0.9977747278332711,
+      "max_block_luma_shift": 2.1008750000000234,
       "pass": true
     },
     {
       "frame_index": 166,
       "time_seconds": 6.64,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.1,
+      "ssim": 0.9977666962201205,
+      "max_block_luma_shift": 2.1469374999999147,
       "pass": true
     },
     {
       "frame_index": 167,
       "time_seconds": 6.68,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977269371462706,
+      "max_block_luma_shift": 2.8228124999999267,
       "pass": true
     },
     {
       "frame_index": 168,
       "time_seconds": 6.72,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977241838739409,
+      "max_block_luma_shift": 3.138124999999917,
       "pass": true
     },
     {
       "frame_index": 169,
       "time_seconds": 6.76,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977076582490763,
+      "max_block_luma_shift": 3.9067499999999242,
       "pass": true
     },
     {
       "frame_index": 170,
       "time_seconds": 6.8,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977276169620759,
+      "max_block_luma_shift": 2.8011874999999264,
       "pass": true
     },
     {
       "frame_index": 171,
       "time_seconds": 6.84,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977188900432078,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 172,
       "time_seconds": 6.88,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977259226846124,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 173,
       "time_seconds": 6.92,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977268571172526,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 174,
       "time_seconds": 6.96,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977259158054922,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 175,
       "time_seconds": 7,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977210441390417,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 176,
       "time_seconds": 7.04,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977210943083832,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 177,
       "time_seconds": 7.08,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.997721182104801,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 178,
       "time_seconds": 7.12,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.997721182159522,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 179,
       "time_seconds": 7.16,
-      "ssim": 0.998,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9977191101238997,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 180,
       "time_seconds": 7.2,
-      "ssim": 0.9979,
-      "max_block_luma_shift": 2.75,
+      "ssim": 0.9976098406584472,
+      "max_block_luma_shift": 2.747499999999704,
       "pass": true
     },
     {
       "frame_index": 181,
       "time_seconds": 7.24,
-      "ssim": 0.9975,
-      "max_block_luma_shift": 3,
+      "ssim": 0.9970959058775646,
+      "max_block_luma_shift": 3.0043437499999897,
       "pass": true
     },
     {
       "frame_index": 182,
       "time_seconds": 7.28,
-      "ssim": 0.9972,
-      "max_block_luma_shift": 3.69,
+      "ssim": 0.9966082675235365,
+      "max_block_luma_shift": 3.6867812499996973,
       "pass": true
     },
     {
       "frame_index": 183,
       "time_seconds": 7.32,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 3.69,
+      "ssim": 0.9958690319333251,
+      "max_block_luma_shift": 3.6867812499996973,
       "pass": true
     },
     {
       "frame_index": 184,
       "time_seconds": 7.36,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 3.69,
+      "ssim": 0.9959736665523632,
+      "max_block_luma_shift": 3.6867812499996973,
       "pass": true
     },
     {
       "frame_index": 185,
       "time_seconds": 7.4,
-      "ssim": 0.9966,
-      "max_block_luma_shift": 3.69,
+      "ssim": 0.9958255515593252,
+      "max_block_luma_shift": 3.7003750000000224,
       "pass": true
     },
     {
       "frame_index": 186,
       "time_seconds": 7.44,
-      "ssim": 0.9966,
-      "max_block_luma_shift": 3.7,
+      "ssim": 0.9956038311652592,
+      "max_block_luma_shift": 3.7024062499996973,
       "pass": true
     },
     {
       "frame_index": 187,
       "time_seconds": 7.48,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9950747575765287,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 188,
       "time_seconds": 7.52,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9950559173156643,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 189,
       "time_seconds": 7.56,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9950263647051041,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 190,
       "time_seconds": 7.6,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9950103494461452,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 191,
       "time_seconds": 7.64,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9949824282384012,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 192,
       "time_seconds": 7.68,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9949861670982812,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 193,
       "time_seconds": 7.72,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9949765934779462,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 194,
       "time_seconds": 7.76,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 4.22,
+      "ssim": 0.9949630479895648,
+      "max_block_luma_shift": 4.219812499999705,
       "pass": true
     },
     {
       "frame_index": 195,
       "time_seconds": 7.8,
-      "ssim": 0.9963,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9949595932280431,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 196,
       "time_seconds": 7.84,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.22,
+      "ssim": 0.9951116816396561,
+      "max_block_luma_shift": 4.219812499999705,
       "pass": true
     },
     {
       "frame_index": 197,
       "time_seconds": 7.88,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9951771451861022,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 198,
       "time_seconds": 7.92,
-      "ssim": 0.9964,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9952378401178916,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 199,
       "time_seconds": 7.96,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9952761375229238,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 200,
       "time_seconds": 8,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9953073391199808,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 201,
       "time_seconds": 8.04,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9953086746292408,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 202,
       "time_seconds": 8.08,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9953443250482575,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 203,
       "time_seconds": 8.12,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9953550009525849,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 204,
       "time_seconds": 8.16,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9953597882276126,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 205,
       "time_seconds": 8.2,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9953501487164925,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 206,
       "time_seconds": 8.24,
-      "ssim": 0.9966,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9955605665904934,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 207,
       "time_seconds": 8.28,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9956944365418025,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 208,
       "time_seconds": 8.32,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 4.24,
+      "ssim": 0.9957317484187622,
+      "max_block_luma_shift": 4.235437499999705,
       "pass": true
     },
     {
       "frame_index": 209,
       "time_seconds": 8.36,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 4.25,
+      "ssim": 0.9957169208419904,
+      "max_block_luma_shift": 4.251062499999705,
       "pass": true
     },
     {
       "frame_index": 210,
       "time_seconds": 8.4,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 4.25,
+      "ssim": 0.995742391878543,
+      "max_block_luma_shift": 4.251062499999705,
       "pass": true
     },
     {
       "frame_index": 211,
       "time_seconds": 8.44,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 4.25,
+      "ssim": 0.9957325126509512,
+      "max_block_luma_shift": 4.251062499999705,
       "pass": true
     },
     {
       "frame_index": 212,
       "time_seconds": 8.48,
-      "ssim": 0.9967,
-      "max_block_luma_shift": 4.25,
+      "ssim": 0.9957988104142309,
+      "max_block_luma_shift": 4.251062499999705,
       "pass": true
     },
     {
       "frame_index": 213,
       "time_seconds": 8.52,
-      "ssim": 0.9968,
-      "max_block_luma_shift": 3.99,
+      "ssim": 0.9961613581616297,
+      "max_block_luma_shift": 3.985437499999705,
       "pass": true
     },
     {
       "frame_index": 214,
       "time_seconds": 8.56,
-      "ssim": 0.9968,
-      "max_block_luma_shift": 3.99,
+      "ssim": 0.996150547853677,
+      "max_block_luma_shift": 3.985437499999705,
       "pass": true
     },
     {
       "frame_index": 215,
       "time_seconds": 8.6,
-      "ssim": 0.9968,
-      "max_block_luma_shift": 3.99,
+      "ssim": 0.9961482139113086,
+      "max_block_luma_shift": 3.985437499999705,
       "pass": true
     },
     {
       "frame_index": 216,
       "time_seconds": 8.64,
-      "ssim": 0.9968,
-      "max_block_luma_shift": 3.99,
+      "ssim": 0.9961461291839823,
+      "max_block_luma_shift": 3.985437499999705,
       "pass": true
     },
     {
       "frame_index": 217,
       "time_seconds": 8.68,
-      "ssim": 0.9968,
-      "max_block_luma_shift": 3.99,
+      "ssim": 0.9961372727085374,
+      "max_block_luma_shift": 3.985437499999705,
       "pass": true
     },
     {
       "frame_index": 218,
       "time_seconds": 8.72,
-      "ssim": 0.9965,
-      "max_block_luma_shift": 4.03,
+      "ssim": 0.9958733772341584,
+      "max_block_luma_shift": 4.032312499999705,
       "pass": true
     },
     {
       "frame_index": 219,
       "time_seconds": 8.76,
-      "ssim": 0.9953,
-      "max_block_luma_shift": 13.63,
+      "ssim": 0.9946821099778089,
+      "max_block_luma_shift": 13.629624999999706,
       "pass": true
     },
     {
       "frame_index": 220,
       "time_seconds": 8.8,
-      "ssim": 0.9938,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9932605476777441,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 221,
       "time_seconds": 8.84,
-      "ssim": 0.9912,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9907942160687548,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 222,
       "time_seconds": 8.88,
-      "ssim": 0.9912,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9907609793936835,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 223,
       "time_seconds": 8.92,
-      "ssim": 0.9912,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.990723990725149,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 224,
       "time_seconds": 8.96,
-      "ssim": 0.9912,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.99069004173759,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 225,
       "time_seconds": 9,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9906546499154252,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 226,
       "time_seconds": 9.04,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9906620817171166,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 227,
       "time_seconds": 9.08,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9906333565961668,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 228,
       "time_seconds": 9.12,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9906340697784015,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 229,
       "time_seconds": 9.16,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9906200695361493,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 230,
       "time_seconds": 9.2,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9906190409423219,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 231,
       "time_seconds": 9.24,
-      "ssim": 0.9911,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9905903817654463,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 232,
       "time_seconds": 9.28,
-      "ssim": 0.991,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9905673599905684,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 233,
       "time_seconds": 9.32,
-      "ssim": 0.991,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9904903457243349,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 234,
       "time_seconds": 9.36,
-      "ssim": 0.991,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9904790613438037,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 235,
       "time_seconds": 9.4,
-      "ssim": 0.991,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9904649405359578,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 236,
       "time_seconds": 9.44,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9904431513202083,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 237,
       "time_seconds": 9.48,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9904195942284367,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 238,
       "time_seconds": 9.52,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.990415950375988,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 239,
       "time_seconds": 9.56,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9904002781873493,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 240,
       "time_seconds": 9.6,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903943908180265,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 241,
       "time_seconds": 9.64,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903940232415468,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 242,
       "time_seconds": 9.68,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903890122371073,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 243,
       "time_seconds": 9.72,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.990368699429037,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 244,
       "time_seconds": 9.76,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903732539209907,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 245,
       "time_seconds": 9.8,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903642163344479,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 246,
       "time_seconds": 9.84,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903707485723884,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 247,
       "time_seconds": 9.88,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903479192023714,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 248,
       "time_seconds": 9.92,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.990356019152696,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 249,
       "time_seconds": 9.96,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903553336281425,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 250,
       "time_seconds": 10,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.990353363363672,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 251,
       "time_seconds": 10.04,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903471418391452,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 252,
       "time_seconds": 10.08,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903562008534136,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 253,
       "time_seconds": 10.12,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903545120984674,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 254,
       "time_seconds": 10.16,
-      "ssim": 0.9909,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903618494125119,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 255,
       "time_seconds": 10.2,
-      "ssim": 0.9908,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9903496199745395,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 256,
       "time_seconds": 10.24,
-      "ssim": 0.9907,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9901933751187344,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 257,
       "time_seconds": 10.28,
-      "ssim": 0.9905,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9896031128350002,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 258,
       "time_seconds": 10.32,
-      "ssim": 0.9902,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9888503715519187,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 259,
       "time_seconds": 10.36,
-      "ssim": 0.9902,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9888391865706756,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 260,
       "time_seconds": 10.4,
-      "ssim": 0.9902,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9888249457572315,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 261,
       "time_seconds": 10.44,
-      "ssim": 0.9902,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9888263693499929,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 262,
       "time_seconds": 10.48,
-      "ssim": 0.9902,
-      "max_block_luma_shift": 8.44,
+      "ssim": 0.9888279525117224,
+      "max_block_luma_shift": 8.436781249999697,
       "pass": true
     },
     {
       "frame_index": 263,
       "time_seconds": 10.52,
-      "ssim": 0.9879,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9863958829003311,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 264,
       "time_seconds": 10.56,
-      "ssim": 0.9879,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9864519235262206,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 265,
       "time_seconds": 10.6,
-      "ssim": 0.9879,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.986448804867454,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 266,
       "time_seconds": 10.64,
-      "ssim": 0.9879,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9863896211688314,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 267,
       "time_seconds": 10.68,
-      "ssim": 0.9879,
-      "max_block_luma_shift": 9.28,
+      "ssim": 0.9864032698313576,
+      "max_block_luma_shift": 9.280125000000368,
       "pass": true
     },
     {
       "frame_index": 268,
       "time_seconds": 10.72,
-      "ssim": 0.988,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.986492149241432,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 269,
       "time_seconds": 10.76,
-      "ssim": 0.9881,
-      "max_block_luma_shift": 9.28,
+      "ssim": 0.9865620647353043,
+      "max_block_luma_shift": 9.280125000000368,
       "pass": true
     },
     {
       "frame_index": 270,
       "time_seconds": 10.8,
-      "ssim": 0.988,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9865398052414481,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 271,
       "time_seconds": 10.84,
-      "ssim": 0.9881,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9866376160095668,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 272,
       "time_seconds": 10.88,
-      "ssim": 0.9882,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9867958570412854,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 273,
       "time_seconds": 10.92,
-      "ssim": 0.9882,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9868080835674466,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 274,
       "time_seconds": 10.96,
-      "ssim": 0.9883,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9869370048158891,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 275,
       "time_seconds": 11,
-      "ssim": 0.9883,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9869760566094395,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 276,
       "time_seconds": 11.04,
-      "ssim": 0.9884,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9871239631622367,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 277,
       "time_seconds": 11.08,
-      "ssim": 0.9884,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9871759388317484,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 278,
       "time_seconds": 11.12,
-      "ssim": 0.9884,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9872119410524587,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 279,
       "time_seconds": 11.16,
-      "ssim": 0.9884,
-      "max_block_luma_shift": 9.26,
+      "ssim": 0.9872311179244716,
+      "max_block_luma_shift": 9.264500000000368,
       "pass": true
     },
     {
       "frame_index": 280,
       "time_seconds": 11.2,
-      "ssim": 0.9884,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9874136474914736,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 281,
       "time_seconds": 11.24,
-      "ssim": 0.9885,
-      "max_block_luma_shift": 9.37,
+      "ssim": 0.9875307469543669,
+      "max_block_luma_shift": 9.373875000000368,
       "pass": true
     },
     {
       "frame_index": 282,
       "time_seconds": 11.28,
-      "ssim": 0.9885,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9875545079900416,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 283,
       "time_seconds": 11.32,
-      "ssim": 0.9886,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9876910795510335,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 284,
       "time_seconds": 11.36,
-      "ssim": 0.9886,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9877609552821786,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 285,
       "time_seconds": 11.4,
-      "ssim": 0.9886,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9877648016246052,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 286,
       "time_seconds": 11.44,
-      "ssim": 0.9886,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9877668507423589,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 287,
       "time_seconds": 11.48,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9878470726118053,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 288,
       "time_seconds": 11.52,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9878633439196054,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 289,
       "time_seconds": 11.56,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.987905202682518,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 290,
       "time_seconds": 11.6,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879200259339544,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 291,
       "time_seconds": 11.64,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879256659070139,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 292,
       "time_seconds": 11.68,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879453111903479,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 293,
       "time_seconds": 11.72,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879298643197594,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 294,
       "time_seconds": 11.76,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879592943358564,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 295,
       "time_seconds": 11.8,
-      "ssim": 0.9887,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879522119020202,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 296,
       "time_seconds": 11.84,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.987994531874452,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 297,
       "time_seconds": 11.88,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.987990353526699,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 298,
       "time_seconds": 11.92,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879694776015593,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 299,
       "time_seconds": 11.96,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879799171312668,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 300,
       "time_seconds": 12,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9879768952228624,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 301,
       "time_seconds": 12.04,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880213970163808,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 302,
       "time_seconds": 12.08,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880289079199577,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 303,
       "time_seconds": 12.12,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880307798813357,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 304,
       "time_seconds": 12.16,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880288546550345,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 305,
       "time_seconds": 12.2,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880299602538112,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 306,
       "time_seconds": 12.24,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880369389154142,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 307,
       "time_seconds": 12.28,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880194902028461,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 308,
       "time_seconds": 12.32,
-      "ssim": 0.9888,
-      "max_block_luma_shift": 9.36,
+      "ssim": 0.9880139693922375,
+      "max_block_luma_shift": 9.358250000000368,
       "pass": true
     },
     {
       "frame_index": 309,
       "time_seconds": 12.36,
-      "ssim": 0.9889,
-      "max_block_luma_shift": 10.3,
+      "ssim": 0.9881022763014307,
+      "max_block_luma_shift": 10.298906250000357,
       "pass": true
     },
     {
       "frame_index": 310,
       "time_seconds": 12.4,
-      "ssim": 0.989,
-      "max_block_luma_shift": 10.3,
+      "ssim": 0.9882099454680593,
+      "max_block_luma_shift": 10.298906250000357,
       "pass": true
     },
     {
       "frame_index": 311,
       "time_seconds": 12.44,
-      "ssim": 0.989,
-      "max_block_luma_shift": 10.3,
+      "ssim": 0.9882327083511082,
+      "max_block_luma_shift": 10.298906250000357,
       "pass": true
     },
     {
       "frame_index": 312,
       "time_seconds": 12.48,
-      "ssim": 0.9889,
-      "max_block_luma_shift": 10.3,
+      "ssim": 0.9882284218615331,
+      "max_block_luma_shift": 10.298906250000357,
       "pass": true
     },
     {
       "frame_index": 313,
       "time_seconds": 12.52,
-      "ssim": 0.9891,
-      "max_block_luma_shift": 8.62,
+      "ssim": 0.9883847162606054,
+      "max_block_luma_shift": 8.618531250000387,
       "pass": true
     },
     {
       "frame_index": 314,
       "time_seconds": 12.56,
-      "ssim": 0.9891,
-      "max_block_luma_shift": 8.62,
+      "ssim": 0.9883961704822277,
+      "max_block_luma_shift": 8.618531250000387,
       "pass": true
     },
     {
       "frame_index": 315,
       "time_seconds": 12.6,
-      "ssim": 0.9891,
-      "max_block_luma_shift": 8.62,
+      "ssim": 0.988405624813308,
+      "max_block_luma_shift": 8.618531250000387,
       "pass": true
     },
     {
       "frame_index": 316,
       "time_seconds": 12.64,
-      "ssim": 0.9891,
-      "max_block_luma_shift": 8.62,
+      "ssim": 0.9884045069293285,
+      "max_block_luma_shift": 8.618531250000387,
       "pass": true
     },
     {
       "frame_index": 317,
       "time_seconds": 12.68,
-      "ssim": 0.9891,
-      "max_block_luma_shift": 8.62,
+      "ssim": 0.9883947908037467,
+      "max_block_luma_shift": 8.618531250000387,
       "pass": true
     },
     {
       "frame_index": 318,
       "time_seconds": 12.72,
-      "ssim": 0.9891,
-      "max_block_luma_shift": 8.62,
+      "ssim": 0.9884028422191666,
+      "max_block_luma_shift": 8.618531250000387,
       "pass": true
     }
   ]

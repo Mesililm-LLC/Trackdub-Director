@@ -116,6 +116,39 @@ public sealed class StaticShotCompositorTests
     }
 
     [Fact]
+    public void AnOcclusionInTheTrailingPartialStripIsMeasured()
+    {
+        // 34 px wide: four full blocks plus a 2 px strip at x 32-33 that the composite also overwrites.
+        RasterImage reference = Textured();
+        var box = new LocalisationBox(0, 0, 34, 16);
+        StaticShotCompositor compositor = StaticShotCompositor.Create(reference, FillRect(reference, box, 200), box, 0.95).Compositor!;
+
+        BoxSsim ssim = compositor.MeasureSsim(FillRect(reference, new LocalisationBox(32, 0, 34, 16), 255));
+
+        Assert.False(compositor.Passes(ssim), $"Strip occlusion must fail; shift {ssim.MaxBlockLumaShift}.");
+    }
+
+    [Fact]
+    public void ComputeBoxSsimRejectsMismatchedImagesAndOutOfFrameBoxes()
+    {
+        RasterImage reference = Textured();
+        RasterImage small = RasterImage.Create(32, 32, new byte[32 * 32 * 3]);
+
+        Assert.Throws<ArgumentException>(() => StaticShotCompositor.ComputeBoxSsim(reference, small, Box));
+        Assert.Throws<ArgumentException>(() => StaticShotCompositor.ComputeBoxSsim(reference, reference, new LocalisationBox(40, 8, 72, 40)));
+    }
+
+    [Fact]
+    public void WindowIncludesItsStartAndExcludesItsEnd()
+    {
+        var window = new StaticShotWindow(2.36, 12.76);
+
+        Assert.True(window.Contains(window.StartSeconds));
+        Assert.False(window.Contains(window.EndSeconds));
+        Assert.False(window.Contains(2.32));
+    }
+
+    [Fact]
     public void ACutToADifferentShotFailsTheGate()
     {
         RasterImage reference = Textured();

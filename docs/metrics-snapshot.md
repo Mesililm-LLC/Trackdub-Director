@@ -180,12 +180,14 @@ captured by `trackdub-director sign-shot` over `media/demo/demo-dub.mp4`
 (1920x1080, 25 fps) with reference `frames/hero-0242.jpg` and the localised
 `frames/localised/hero-0242-cafeteria.png`, box (449,145)-(751,534).
 
-- Metric: luma SSIM over non-overlapping 8x8 blocks of the box region, each
+- Metric: luma SSIM over 8x8 blocks of the box region, each
   frame vs the reference frame. Gate: block-mean SSIM >= 0.95 **and** largest
   single-block mean-luma shift <= 30 levels (catches a small occlusion the
-  mean averages away).
-- Window 2.36-12.76 s: **260 frames checked (59-318), SSIM min 0.9879
-  (frame 263), mean 0.9936; largest block luma shift 13.63 (frame 219);
+  mean averages away). Blocks cover the whole box: when a side is not a
+  multiple of 8 (this box is 302x389), one edge-anchored row or column of
+  blocks measures the trailing strip, because the composite overwrites it too.
+- Window 2.36-12.76 s: **260 frames checked (59-318), SSIM min 0.9864
+  (frame 266), mean 0.9926; largest block luma shift 13.63 (frame 219);
   Composited, 260 frames, outside_box_diff max 0.**
   Cross-check: ffmpeg's own `ssim` filter over the same crop gave min 0.988.
 - Rejected design, stated: a worst-single-block SSIM floor. On this unchanged
@@ -202,8 +204,8 @@ captured by `trackdub-director sign-shot` over `media/demo/demo-dub.mp4`
   would have meant 260 image calls.
 - outside_box_diff is counted on decoded RGB before the h264 encode; the
   output video is lossy everywhere, including outside the box.
-- Tests on the branch: `dotnet test --list-tests` **243 cases discovered**
-  (229 at freeze + 14); the full run executed **245 passed, 0 failed**, because
+- Tests on the branch: `dotnet test --list-tests` **246 cases discovered**
+  (229 at freeze + 17); the full run executed **248 passed, 0 failed**, because
   the invalid-box theory over `LocalisationBox` data is discovered as one case
   and runs three rows.
 

@@ -46,13 +46,13 @@ Every figure comes from a report file in this repo; method in
 - **Sign localisation:** 3 of 3 frames repainted COFFEE SHOP to CAFETERÍA
   with an outside-box pixel difference of 0.
 - **Video-rate sign:** the static-shot gate checked all 260 frames of the
-  10.4 s sign shot: box mean SSIM 0.9879 or higher (threshold 0.95) and no
+  10.4 s sign shot: box mean SSIM 0.9864 or higher (threshold 0.95) and no
   8x8 block brighter or darker by more than 13.6 luma levels (limit 30). It
   composited one repaint across the shot, outside-box difference 0 on every
   frame (`samples/voa10/sign-shot-report.json`). Starting the window one
   frame early takes in the previous shot (box SSIM 0.28), and the gate
   refuses and writes no video (`samples/voa10/sign-shot-refused-report.json`).
-- **Tests:** 243 .NET test cases discovered (245 executed; one theory over
+- **Tests:** 246 .NET test cases discovered (248 executed; one theory over
   record-typed data is discovered as a single case) and 11 web tests.
 
 ## Adoption

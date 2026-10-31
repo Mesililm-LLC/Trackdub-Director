@@ -11,7 +11,7 @@ Rules carried from the Participant Guide and the asset spec:
   meaning-fail candidates. The demo says so (Beat 8).
 - Video-rate sign claim only for the coffee-shop shot, and only with its
   reason: the camera is static, and the static-shot gate verified it
-  (`samples/voa10/sign-shot-report.json`: 260 frames, mean SSIM min 0.9879,
+  (`samples/voa10/sign-shot-report.json`: 260 frames, mean SSIM min 0.9864,
   largest block luma shift 13.6 vs limit 30, outside_box_diff 0). Never claim video-rate repaint in general: a window
   whose sign region measurably changes (a cut, a camera move, an occluder
   that shifts a block's brightness by more than 30 levels) is refused
@@ -101,8 +101,8 @@ region, and only that region is composited back. Every pixel outside
 the box is machine-checked against the source: difference zero, on all
 three validated frames. One repaint costs about 18 thousand tokens. This
 shot is static, and a gate checked all 260 frames against the repainted
-one, so that single repaint covers the whole shot. A shot that changes
-gets refused."
+one, so that single repaint covers the whole shot. If the gate measures
+the sign changing, the shot is refused."
 
 ## Beat 7: The dubbed segment (2:12-2:38)
 
@@ -120,7 +120,7 @@ Visual: metrics snapshot scrolling (test snapshot, per-lane totals),
 then the end card.
 
 Voiceover:
-"Honest numbers: 243 automated tests. Across twelve uniform segments,
+"Honest numbers: 246 automated tests. Across twelve uniform segments,
 the meaning gate caught zero silent failures on this material, and the
 snapshot in the repo says exactly that. The gates cost about 850 tokens
 per segment and leave a verdict for every line. Trackdub-Director: the

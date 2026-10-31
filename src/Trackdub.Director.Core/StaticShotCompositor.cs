@@ -27,10 +27,10 @@ public sealed class StaticShotCompositor
     /// </summary>
     public const double MaxBlockLumaShift = 30;
 
-    /// <summary>SSIM block edge in pixels (non-overlapping blocks; partial edge blocks are ignored).</summary>
+    /// <summary>SSIM block edge in pixels. Blocks tile the box; a trailing partial strip is covered by one block anchored at the far edge.</summary>
     public const int BlockSize = 8;
 
-    public const string MetricDescription = "luma SSIM over non-overlapping 8x8 blocks of the box region, frame vs reference frame; gate on the block mean SSIM and on the largest single-block mean-luma shift";
+    public const string MetricDescription = "luma SSIM over 8x8 blocks covering the whole box region (trailing strip measured by an edge-anchored block), frame vs reference frame; gate on the block mean SSIM and on the largest single-block mean-luma shift";
 
     private const double C1 = (0.01 * 255) * (0.01 * 255);
     private const double C2 = (0.03 * 255) * (0.03 * 255);
@@ -108,32 +108,47 @@ public sealed class StaticShotCompositor
         return frames.FirstOrDefault(f => !f.Pass);
     }
 
-    /// <summary>Mean luma SSIM over the full 8x8 blocks inside <paramref name="box"/>, plus the largest single-block mean-luma shift.</summary>
+    /// <summary>
+    /// Mean luma SSIM over 8x8 blocks covering every pixel of <paramref name="box"/>,
+    /// plus the largest single-block mean-luma shift. When a box side is not a
+    /// multiple of 8, one extra row or column of blocks is anchored at the far
+    /// edge (overlapping its neighbour), so the strip that is composited is
+    /// also measured.
+    /// </summary>
     public static BoxSsim ComputeBoxSsim(RasterImage a, RasterImage b, LocalisationBox box)
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
         ArgumentNullException.ThrowIfNull(box);
-        int blocksX = (box.X2 - box.X1) / BlockSize;
-        int blocksY = (box.Y2 - box.Y1) / BlockSize;
-        if (blocksX == 0 || blocksY == 0)
+        string? error = ValidateSizes(a, b) ?? ValidateBox(a, box);
+        if (error is not null)
         {
-            throw new ArgumentException("Box must be at least one SSIM block in each dimension.", nameof(box));
+            throw new ArgumentException(error, nameof(box));
         }
 
+        int[] xs = BlockOrigins(box.X1, box.X2);
+        int[] ys = BlockOrigins(box.Y1, box.Y2);
         double sum = 0;
         double maxShift = 0;
-        for (int by = 0; by < blocksY; by++)
+        foreach (int y in ys)
         {
-            for (int bx = 0; bx < blocksX; bx++)
+            foreach (int x in xs)
             {
-                (double ssim, double shift) = CompareBlock(a, b, box.X1 + bx * BlockSize, box.Y1 + by * BlockSize);
+                (double ssim, double shift) = CompareBlock(a, b, x, y);
                 sum += ssim;
                 maxShift = Math.Max(maxShift, shift);
             }
         }
 
-        return new BoxSsim(sum / (blocksX * blocksY), maxShift);
+        return new BoxSsim(sum / (xs.Length * ys.Length), maxShift);
+    }
+
+    /// <summary>Block start positions covering [start, end): full steps of 8, plus one block ending exactly at <paramref name="end"/> when a remainder is left.</summary>
+    private static int[] BlockOrigins(int start, int end)
+    {
+        int full = (end - start) / BlockSize;
+        IEnumerable<int> origins = Enumerable.Range(0, full).Select(i => start + i * BlockSize);
+        return (end - start) % BlockSize == 0 ? origins.ToArray() : origins.Append(end - BlockSize).ToArray();
     }
 
     /// <summary>One block's SSIM and its absolute mean-luma shift.</summary>

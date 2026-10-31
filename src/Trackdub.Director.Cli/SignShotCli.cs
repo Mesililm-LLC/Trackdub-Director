@@ -59,7 +59,7 @@ internal static class SignShotCli
             Console.WriteLine($"  report -> {options.Report}");
             return report.Status == StaticShotStatus.Refused ? 2 : 0;
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
             return 1;
@@ -80,7 +80,7 @@ internal static class SignShotCli
         }
 
         StaticShotFrame[] frames = Measure(video, options.Window, compositor);
-        GateOutcome outcome = Decide(frames, options) ?? Composite(video, options, compositor);
+        GateOutcome outcome = Decide(frames, options) ?? Composite(video, options, compositor, frames.Length);
         return BuildReport(options, video, frames, outcome);
     }
 
@@ -95,7 +95,7 @@ internal static class SignShotCli
         StaticShotFrame? failure = StaticShotCompositor.FirstFailure(frames);
         if (failure is not null)
         {
-            return Refused($"Frame {failure.FrameIndex} (t={failure.TimeSeconds:0.000}s) box SSIM {failure.Ssim:0.0000} (largest block luma shift {failure.MaxBlockLumaShift:0.0}) fails the {options.MinSsim:0.00} mean SSIM / {StaticShotCompositor.MaxBlockLumaShift:0} luma-shift gate: the sign region changed, so one repaint cannot stand in for this shot.");
+            return Refused($"Frame {failure.FrameIndex} (t={failure.TimeSeconds:0.000}s) box SSIM {failure.Ssim:0.######} (largest block luma shift {failure.MaxBlockLumaShift:0.####}) fails the {options.MinSsim:0.00} mean SSIM / {StaticShotCompositor.MaxBlockLumaShift:0} luma-shift gate: the sign region changed, so one repaint cannot stand in for this shot.");
         }
 
         return options.Output is null ? new GateOutcome(StaticShotStatus.Passed, null, 0, null, null) : null;
@@ -112,14 +112,20 @@ internal static class SignShotCli
             if (window.Contains(t))
             {
                 BoxSsim ssim = compositor.MeasureSsim(new RasterImage(video.Width, video.Height, rgb));
-                frames.Add(new StaticShotFrame(index, Math.Round(t, 3), Math.Round(ssim.Mean, 4), Math.Round(ssim.MaxBlockLumaShift, 2), compositor.Passes(ssim)));
+                // Metrics are stored unrounded so the report agrees with the pass flag computed from them.
+                frames.Add(new StaticShotFrame(index, Math.Round(t, 3), ssim.Mean, ssim.MaxBlockLumaShift, compositor.Passes(ssim)));
             }
         }
 
         return frames.ToArray();
     }
 
-    private static GateOutcome Composite(FfmpegVideo video, Options options, StaticShotCompositor compositor)
+    /// <summary>
+    /// Pass 2. Every in-window frame is re-gated before it is encoded, and the
+    /// count must match pass 1, so a file that changed between passes aborts
+    /// the run (the encoder then deletes its partial output).
+    /// </summary>
+    private static GateOutcome Composite(FfmpegVideo video, Options options, StaticShotCompositor compositor, int measuredFrames)
     {
         int composited = 0;
         int diffMax = 0;
@@ -132,10 +138,21 @@ internal static class SignShotCli
                 continue;
             }
 
-            RasterImage output = compositor.Composite(new RasterImage(video.Width, video.Height, rgb), out int diff);
+            var frame = new RasterImage(video.Width, video.Height, rgb);
+            if (!compositor.Passes(compositor.MeasureSsim(frame)))
+            {
+                throw new InvalidOperationException($"Frame {index} failed the gate on the compositing pass; the video changed after it was measured. Nothing was written.");
+            }
+
+            RasterImage output = compositor.Composite(frame, out int diff);
             diffMax = Math.Max(diffMax, diff);
             composited++;
             encoder.Write(output.Rgb);
+        }
+
+        if (composited != measuredFrames)
+        {
+            throw new InvalidOperationException($"The compositing pass saw {composited} in-window frames; the measuring pass saw {measuredFrames}. Nothing was written.");
         }
 
         encoder.Finish();
@@ -190,7 +207,7 @@ internal static class SignShotCli
         Dictionary<string, string> values = args.Chunk(2)
             .GroupBy(pair => pair[0], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Last()[1], StringComparer.Ordinal);
-        string? keyError = ValidateKeys(values);
+        string? keyError = ValidateKeys(values) ?? ValidateOutput(values);
         return keyError is null ? BuildOptions(values) : ParseResult.Fail(keyError);
     }
 
@@ -237,7 +254,26 @@ internal static class SignShotCli
     }
 
     private static double? ParseNumber(string raw) =>
-        double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : null;
+        double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && double.IsFinite(v) ? v : null;
+
+    /// <summary>
+    /// Refuses an --output that resolves to the input video: the encoder runs
+    /// with -y and reads its audio from the input, so it would truncate the
+    /// source. Paths are compared after full-path normalisation (case-insensitive
+    /// on Windows); hard links to the same file are not detected.
+    /// </summary>
+    private static string? ValidateOutput(Dictionary<string, string> values)
+    {
+        if (!values.TryGetValue("--output", out string? output))
+        {
+            return null;
+        }
+
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return string.Equals(Path.GetFullPath(output), Path.GetFullPath(values["--video"]), comparison)
+            ? "--output must not be the input video."
+            : null;
+    }
 
     private static void PrintSummary(StaticShotReport report)
     {
