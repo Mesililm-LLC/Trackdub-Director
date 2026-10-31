@@ -40,6 +40,16 @@ null. Malformed output is `Failed` with no defaulted context. Exposed
 read-only at `POST /api/scene-context` and as a `Scene:` outcome alongside
 Timing/Meaning in the web UI (`Run Scene`).
 
+## Adoption
+
+The verification gates sit behind provider interfaces (translation, TTS,
+image), so an existing dubbing pipeline can adopt the timing and meaning
+verification layer without adopting the whole app: implement the interface
+against your own providers and the QA loop, meaning gate, and revision
+bounce-back work unchanged. Voice in the audition lane is ElevenLabs TTS
+because the Meta model catalog offers no TTS endpoint; this is disclosed
+wherever the audition is described.
+
 ## Architecture
 
 ```
@@ -99,19 +109,23 @@ Optional overrides: `META_MODEL` (default `muse-spark-1.1`),
 
 ### Single-command mode (prod-like)
 
-Build the frontend into the server's `wwwroot`, then run the server:
+A clean clone runs the whole app with one command:
 
 ```bash
-cd web && npm install && npm run build && cd ..
 dotnet run --project src/Trackdub.Director.Server
 # open http://localhost:5103
 ```
 
-The built frontend is served from `src/Trackdub.Director.Server/wwwroot/`; one
-`dotnet run` is the whole app. No key is required to start — the UI loads and
-`GET /api/status` reports `hasKey: false` until a key is configured. Live
-endpoints (`POST /api/translate`, `POST /api/qa`, `GET /api/models`) return
-401/502 with a safe error when no key is set.
+The prebuilt web UI is committed under wwwroot so the app runs with a single
+dotnet run; rebuild it with `cd web && npm run build` if you modify the web
+frontend.
+
+No key is required to start — the UI loads and `GET /api/status` reports
+`hasKey: false` until a key is configured. Live endpoints
+(`POST /api/translate`, `POST /api/qa`, `GET /api/models`) return 401/502 with
+a safe error when no Meta key is set. `ELEVENLABS_API_KEY` is needed only for
+live audition runs (`POST /api/audition`); when unset the audition lane fails
+closed with zero calls.
 
 ### Development mode (Vite + backend)
 
