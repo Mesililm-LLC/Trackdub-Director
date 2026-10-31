@@ -9,6 +9,10 @@ import {
   type DirectorAdaptationBatch,
   type DirectorAdaptationInput,
   type DirectorAdaptationSegmentResult,
+  type DirectorMeaningResult,
+  type TranslationProvenance,
+  type VisionProvenance,
+  type VisionUsage,
   type AuditionReport,
   type AuditionSegmentReport,
   type AuditionTake,
@@ -45,6 +49,14 @@ function verdictClass(verdict: string): string {
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+function orDash(value: string | null | undefined): string {
+  return value ?? "—";
+}
+
+function listOrDash(values: string[] | null | undefined): string {
+  return values?.length ? values.join(" | ") : "—";
 }
 
 function parseSegments(text: string): SegmentInput[] {
@@ -291,19 +303,16 @@ function RegionRow({ region, index }: { region: SceneRegion; index: number }) {
 }
 
 function SceneHeader({ context }: { context: DirectorContext | undefined }) {
+  const fields: Partial<DirectorContext> = context ?? {};
   return (
     <>
       <div className="token-usage">
-        Speaker: {context?.speaker_label ?? context?.speaker_id ?? "—"} · Emotion/tone: {context?.emotion_tone_label ?? "—"}
+        Speaker: {orDash(fields.speaker_label ?? fields.speaker_id)} · Emotion/tone: {orDash(fields.emotion_tone_label)}
       </div>
-      <div className="token-usage">Speaker description: {context?.speaker_description ?? "—"}</div>
-      <div className="token-usage">
-        On-screen text: {context?.on_screen_text?.length ? context.on_screen_text.join(" | ") : "—"}
-      </div>
-      <div className="token-usage">
-        Burned-in text: {context?.burned_in_text?.length ? context.burned_in_text.join(" | ") : "—"}
-      </div>
-      <div className="token-usage">Scene summary: {context?.scene_summary ?? "—"}</div>
+      <div className="token-usage">Speaker description: {orDash(fields.speaker_description)}</div>
+      <div className="token-usage">On-screen text: {listOrDash(fields.on_screen_text)}</div>
+      <div className="token-usage">Burned-in text: {listOrDash(fields.burned_in_text)}</div>
+      <div className="token-usage">Scene summary: {orDash(fields.scene_summary)}</div>
     </>
   );
 }
@@ -336,28 +345,41 @@ function SceneDetails({ scene }: { scene: SceneSegmentResult }) {
   );
 }
 
+function hasFrameInfo(scene: SceneSegmentResult): boolean {
+  return Boolean(scene.frame_id || scene.timecode_seconds != null || scene.frame_sha256);
+}
+
+function VisionGateLine({ provenance, usage }: { provenance: VisionProvenance; usage: VisionUsage | undefined }) {
+  const reasoning = usage?.reasoning_tokens;
+  return (
+    <div className="token-usage">
+      Vision gate: requested {provenance.requested_model_id} · returned {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
+      {usage?.total_tokens ?? "—"}
+      {reasoning != null ? ` (reasoning ${reasoning})` : ""}
+    </div>
+  );
+}
+
+function FrameLine({ scene }: { scene: SceneSegmentResult }) {
+  return (
+    <div className="token-usage" title={scene.frame_sha256 ?? ""}>
+      Frame: {orDash(scene.frame_id)} · {scene.timecode_seconds != null ? `${scene.timecode_seconds}s` : "—"} · sha256{" "}
+      {scene.frame_sha256 ? `${scene.frame_sha256.slice(0, 12)}…` : "—"}
+    </div>
+  );
+}
+
 function SceneVisionFooter({ scene }: { scene: SceneSegmentResult }) {
   const provenance = scene.vision_provenance;
-  const hasFrame = Boolean(scene.frame_id || scene.timecode_seconds != null || scene.frame_sha256);
+  const hasFrame = hasFrameInfo(scene);
   if (!provenance && !hasFrame) {
     return null;
   }
 
   return (
     <>
-      {provenance && (
-        <div className="token-usage">
-          Vision gate: requested {provenance.requested_model_id} · returned {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
-          {scene.vision_usage?.total_tokens ?? "—"}
-          {scene.vision_usage?.reasoning_tokens != null ? ` (reasoning ${scene.vision_usage.reasoning_tokens})` : ""}
-        </div>
-      )}
-      {hasFrame && (
-        <div className="token-usage" title={scene.frame_sha256 ?? ""}>
-          Frame: {scene.frame_id ?? "—"} · {scene.timecode_seconds != null ? `${scene.timecode_seconds}s` : "—"} · sha256{" "}
-          {scene.frame_sha256 ? `${scene.frame_sha256.slice(0, 12)}…` : "—"}
-        </div>
-      )}
+      {provenance && <VisionGateLine provenance={provenance} usage={scene.vision_usage} />}
+      {hasFrame && <FrameLine scene={scene} />}
     </>
   );
 }
@@ -445,17 +467,50 @@ function DirectorSideBySide({ director }: { director: DirectorAdaptationSegmentR
   );
 }
 
+function isQuietMeaning(meaning: DirectorMeaningResult): boolean {
+  return meaning.issues.length === 0 && meaning.verdict === "Pass";
+}
+
 function DirectorMeaningIssues({ director }: { director: DirectorAdaptationSegmentResult }) {
   const meaning = director.meaning;
-  if (!meaning || (meaning.issues.length === 0 && meaning.verdict === "Pass")) {
+  if (!meaning || isQuietMeaning(meaning)) {
     return null;
   }
 
+  const hasIssues = meaning.issues.length > 0;
   return (
     <div className="meaning-issues">
-      <strong>meaning{meaning.issues.length > 0 ? " issues:" : ":"}</strong>{" "}
-      {meaning.issues.length > 0 ? meaning.issues.join("; ") : meaning.explanation}
-      {meaning.issues.length > 0 && meaning.explanation ? ` — ${meaning.explanation}` : ""}
+      <strong>meaning{hasIssues ? " issues:" : ":"}</strong>{" "}
+      {hasIssues ? meaning.issues.join("; ") : meaning.explanation}
+      {hasIssues && meaning.explanation ? ` — ${meaning.explanation}` : ""}
+    </div>
+  );
+}
+
+function DirectorErrorLine({ error }: { error: string }) {
+  return (
+    <div className="meaning-issues">
+      <strong>Adaptation failed:</strong> {error}
+    </div>
+  );
+}
+
+function DirectorChangeLine({ changed }: { changed: boolean }) {
+  return <div className="token-usage">Adaptation: {changed ? "changed" : "no change"}</div>;
+}
+
+function ContextFieldsLine({ fields }: { fields: string[] }) {
+  return <div className="token-usage">Context fields used: {fields.length ? fields.join(", ") : "none"}</div>;
+}
+
+function DirectorGateLine({ director, provenance }: { director: DirectorAdaptationSegmentResult; provenance: TranslationProvenance }) {
+  const reasoning = director.usage?.reasoning_tokens;
+  return (
+    <div className="token-usage">
+      Director gate: model {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
+      {director.usage?.total_tokens ?? "—"}
+      {reasoning != null ? ` (reasoning ${reasoning})` : ""}
+      {director.meaning ? ` · meaning tokens ${director.meaning.usage.total_tokens}` : ""}
     </div>
   );
 }
@@ -465,26 +520,11 @@ function DirectorPanel({ seg, director }: { seg: SegmentInput; director: Directo
     <div className="attempts-panel" aria-label={`Director adaptation for ${seg.id}`}>
       <DirectorSideBySide director={director} />
       <DirectorGatePills director={director} />
-      {director.error && (
-        <div className="meaning-issues">
-          <strong>Adaptation failed:</strong> {director.error}
-        </div>
-      )}
+      {director.error && <DirectorErrorLine error={director.error} />}
       <DirectorMeaningIssues director={director} />
-      {director.changed != null && (
-        <div className="token-usage">Adaptation: {director.changed ? "changed" : "no change"}</div>
-      )}
-      <div className="token-usage">
-        Context fields used: {director.context_fields_used.length ? director.context_fields_used.join(", ") : "none"}
-      </div>
-      {director.provenance && (
-        <div className="token-usage">
-          Director gate: model {director.provenance.model_id} · template {director.provenance.prompt_template_version} · {director.provenance.timestamp_utc} · tokens{" "}
-          {director.usage?.total_tokens ?? "—"}
-          {director.usage?.reasoning_tokens != null ? ` (reasoning ${director.usage.reasoning_tokens})` : ""}
-          {director.meaning ? ` · meaning tokens ${director.meaning.usage.total_tokens}` : ""}
-        </div>
-      )}
+      {director.changed != null && <DirectorChangeLine changed={director.changed} />}
+      <ContextFieldsLine fields={director.context_fields_used} />
+      {director.provenance && <DirectorGateLine director={director} provenance={director.provenance} />}
     </div>
   );
 }
