@@ -95,7 +95,7 @@ public sealed class AuditionServiceTests
             double seconds = _durations.Count > 0 ? _durations.Dequeue() : 1.0;
             int frames = (int)Math.Round(seconds * PcmSampleRate);
             byte[] pcm = new byte[frames * 2];
-            byte[] wav = AudioDuration.ToWav(pcm, PcmSampleRate, PcmChannels, PcmBitsPerSample);
+            byte[] wav = AudioDuration.ToWav(pcm, new PcmFormat(PcmSampleRate, PcmChannels, PcmBitsPerSample));
             return Task.FromResult(new TtsSynthesisResult(wav, text.Length));
         }
 
@@ -167,20 +167,21 @@ public sealed class AuditionServiceTests
             [new AuditionSegmentInput("seg-1", "We need one more take.", 2.0, "anna")], "en", "es");
 
         // Casting picks the two eligible stock voices in name order.
-        Assert.Equal("Alba", report.Cast.Single(c => c.SpeakerId == "anna").VoiceName);
-        Assert.Equal("Zoe", report.Cast.Single(c => c.SpeakerId == "ashley").VoiceName);
+        Assert.Equal(("Alba", "Zoe"), (report.Cast.Single(c => c.SpeakerId == "anna").VoiceName, report.Cast.Single(c => c.SpeakerId == "ashley").VoiceName));
 
         // Only the meaning-passing revision was synthesized (call counts prove the gate).
         AuditionSegmentReport line = Assert.Single(report.Segments);
         Assert.Equal(2, line.Takes.Length);
-        Assert.Equal(MeaningVerdict.Fail, line.Takes[0].MeaningVerdict);
-        Assert.False(line.Takes[0].Synthesized);
-        Assert.Equal(MeaningVerdict.Pass, line.Takes[1].MeaningVerdict);
-        Assert.True(line.Takes[1].Synthesized);
-        Assert.Single(tts.SynthCalls);
-        Assert.Equal("Necesitamos una toma mas.", tts.SynthCalls[0].Text);
-        Assert.Equal("voice-alba", tts.SynthCalls[0].VoiceId);
+        Assert.Equal((MeaningVerdict.Fail, MeaningVerdict.Pass), (line.Takes[0].MeaningVerdict, line.Takes[1].MeaningVerdict));
+        Assert.Equal((false, true), (line.Takes[0].Synthesized, line.Takes[1].Synthesized));
+        AssertSingleSynthesis(tts, "Necesitamos una toma mas.", "voice-alba");
         Assert.True(line.Cast);
+    }
+
+    private static void AssertSingleSynthesis(FakeTts tts, string text, string voiceId)
+    {
+        Assert.Single(tts.SynthCalls);
+        Assert.Equal((text, voiceId), (tts.SynthCalls[0].Text, tts.SynthCalls[0].VoiceId));
     }
 
     private static string Long(string seed, int length)
@@ -223,20 +224,17 @@ public sealed class AuditionServiceTests
             [new AuditionSegmentInput("seg-1", "A long line that runs over.", 4.0, "ashley")], "en", "es");
 
         AuditionSegmentReport line = Assert.Single(report.Segments);
-        Assert.Equal(3, line.Takes.Length);
-        Assert.Equal(3, tts.SynthCalls.Count);
-        Assert.Equal(AuditionTimingVerdict.Fail, line.Takes[0].TimingVerdict);
-        Assert.Equal(AuditionTimingVerdict.Pass, line.Takes[1].TimingVerdict);
-        Assert.Equal(AuditionTimingVerdict.Pass, line.Takes[2].TimingVerdict);
-        Assert.Equal(3, line.WinnerTakeNumber);
-        Assert.Equal("seg-1-take3.wav", line.WinnerFileName);
-        Assert.True(line.Takes[2].IsWinner);
-        Assert.False(line.Takes[1].IsWinner);
+        Assert.Equal((3, 3), (line.Takes.Length, tts.SynthCalls.Count));
+        Assert.Equal((AuditionTimingVerdict.Fail, AuditionTimingVerdict.Pass, AuditionTimingVerdict.Pass), (line.Takes[0].TimingVerdict, line.Takes[1].TimingVerdict, line.Takes[2].TimingVerdict));
+
+        Assert.Equal((3, "seg-1-take3.wav"), (line.WinnerTakeNumber, line.WinnerFileName));
+        Assert.Equal((false, true), (line.Takes[1].IsWinner, line.Takes[2].IsWinner));
         Assert.True(line.Cast);
-        Assert.Equal(1, report.Totals.LinesCast);
-        Assert.Equal(3, report.Totals.TakesSynthesized);
+
+        var totals = report.Totals;
+        Assert.Equal((1, 3), (totals.LinesCast, totals.TakesSynthesized));
         // QA made 4 translate calls (initial + 3 revisions); audition meaning-checked 3 candidates.
-        Assert.Equal(7, report.Totals.MetaCalls);
+        Assert.Equal(7, totals.MetaCalls);
     }
 
     [Fact]
@@ -250,17 +248,8 @@ public sealed class AuditionServiceTests
             [new AuditionSegmentInput("seg-1", "A long line that runs over.", 4.0, "anna")], "en", "es");
 
         AuditionSegmentReport line = Assert.Single(report.Segments);
-        Assert.False(line.Cast);
-        Assert.Null(line.WinnerTakeNumber);
-        Assert.Null(line.WinnerFileName);
-        Assert.Equal(0, report.Totals.LinesCast);
-        Assert.All(line.Takes, t =>
-        {
-            Assert.Equal(MeaningVerdict.Pass, t.MeaningVerdict);
-            Assert.True(t.Synthesized);
-            Assert.Equal(AuditionTimingVerdict.Fail, t.TimingVerdict);
-            Assert.False(t.IsWinner);
-        });
+        Assert.Equal((false, null, null, 0), (line.Cast, line.WinnerTakeNumber, line.WinnerFileName, report.Totals.LinesCast));
+        Assert.All(line.Takes, t => Assert.Equal((MeaningVerdict.Pass, AuditionTimingVerdict.Fail, true, false), (t.MeaningVerdict, t.TimingVerdict, t.Synthesized, t.IsWinner)));
     }
 
     [Fact]
@@ -280,16 +269,14 @@ public sealed class AuditionServiceTests
         AuditionReport report = await BuildService(meta, tts).RunAsync(segments, "en", "es");
 
         // Five 600-char takes reach exactly 3000; the sixth would exceed it.
-        Assert.True(report.Totals.ElevenLabsCapHit);
-        Assert.False(report.Totals.MetaCapHit);
-        Assert.Equal(3000, report.Totals.ElevenLabsCharacters);
-        Assert.Equal(5, report.Totals.TakesSynthesized);
-        Assert.Equal(5, tts.SynthCalls.Count);
+        var totals = report.Totals;
+        Assert.Equal((true, false, 3000), (totals.ElevenLabsCapHit, totals.MetaCapHit, totals.ElevenLabsCharacters));
+        Assert.Equal((5, 5), (totals.TakesSynthesized, tts.SynthCalls.Count));
+        Assert.Equal(5, totals.LinesCast);
+
         AuditionSegmentReport last = report.Segments[^1];
-        Assert.False(last.Takes[0].Synthesized);
+        Assert.Equal((false, false), (last.Takes[0].Synthesized, last.Cast));
         Assert.Contains("cap", last.Takes[0].SynthesisNote ?? string.Empty, StringComparison.OrdinalIgnoreCase);
-        Assert.False(last.Cast);
-        Assert.Equal(5, report.Totals.LinesCast);
     }
 
     [Fact]

@@ -10,7 +10,7 @@ namespace Trackdub.Director.Core;
 /// </summary>
 public static class AudioDuration
 {
-    public static double Seconds(byte[] audioBytes, int pcmSampleRate, int pcmChannels, int pcmBitsPerSample)
+    public static double Seconds(byte[] audioBytes, PcmFormat pcm)
     {
         ArgumentNullException.ThrowIfNull(audioBytes);
         if (audioBytes.Length == 0)
@@ -23,14 +23,12 @@ public static class AudioDuration
             return WavSeconds(audioBytes);
         }
 
-        ValidatePcm(pcmSampleRate, pcmChannels, pcmBitsPerSample);
-        int bytesPerFrame = pcmChannels * (pcmBitsPerSample / 8);
-        double frames = (double)audioBytes.Length / bytesPerFrame;
-        return frames / pcmSampleRate;
+        pcm.Validate();
+        return (double)audioBytes.Length / pcm.BytesPerFrame / pcm.SampleRate;
     }
 
     /// <summary>Wraps raw PCM samples in a minimal canonical WAV header for storage/playback.</summary>
-    public static byte[] ToWav(byte[] audioBytes, int pcmSampleRate, int pcmChannels, int pcmBitsPerSample)
+    public static byte[] ToWav(byte[] audioBytes, PcmFormat pcm)
     {
         ArgumentNullException.ThrowIfNull(audioBytes);
         if (IsWav(audioBytes))
@@ -38,9 +36,7 @@ public static class AudioDuration
             return audioBytes;
         }
 
-        ValidatePcm(pcmSampleRate, pcmChannels, pcmBitsPerSample);
-        int blockAlign = pcmChannels * (pcmBitsPerSample / 8);
-        int byteRate = pcmSampleRate * blockAlign;
+        pcm.Validate();
         using var stream = new MemoryStream(44 + audioBytes.Length);
         using var writer = new BinaryWriter(stream);
         writer.Write(Encoding.ASCII.GetBytes("RIFF"));
@@ -49,29 +45,16 @@ public static class AudioDuration
         writer.Write(Encoding.ASCII.GetBytes("fmt "));
         writer.Write(16);
         writer.Write((short)1); // PCM
-        writer.Write((short)pcmChannels);
-        writer.Write(pcmSampleRate);
-        writer.Write(byteRate);
-        writer.Write((short)blockAlign);
-        writer.Write((short)pcmBitsPerSample);
+        writer.Write((short)pcm.Channels);
+        writer.Write(pcm.SampleRate);
+        writer.Write(pcm.SampleRate * pcm.BytesPerFrame);
+        writer.Write((short)pcm.BytesPerFrame);
+        writer.Write((short)pcm.BitsPerSample);
         writer.Write(Encoding.ASCII.GetBytes("data"));
         writer.Write(audioBytes.Length);
         writer.Write(audioBytes);
         writer.Flush();
         return stream.ToArray();
-    }
-
-    private static void ValidatePcm(int sampleRate, int channels, int bitsPerSample)
-    {
-        if (!IsWholeBytePcm(sampleRate, channels, bitsPerSample))
-        {
-            throw new ArgumentOutOfRangeException(nameof(sampleRate), "Declared PCM parameters must be positive with whole-byte samples.");
-        }
-    }
-
-    private static bool IsWholeBytePcm(int sampleRate, int channels, int bitsPerSample)
-    {
-        return sampleRate > 0 && channels > 0 && bitsPerSample > 0 && bitsPerSample % 8 == 0;
     }
 
     private static bool IsWav(byte[] bytes)

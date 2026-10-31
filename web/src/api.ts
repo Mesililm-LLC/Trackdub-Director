@@ -190,6 +190,19 @@ export type SceneContextBatch = {
   vision_usage_total?: VisionUsage;
 };
 
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const bodyText = await r.text().catch(() => "");
+    throw new Error(`POST ${path} ${r.status}: ${bodyText.slice(0, 600)}`);
+  }
+  return (await r.json()) as T;
+}
+
 export async function postSceneContext(segments: SegmentInput[]): Promise<SceneContextBatch> {
   const sceneSegments = segments.map((s) => ({
     id: s.id,
@@ -203,16 +216,7 @@ export async function postSceneContext(segments: SegmentInput[]): Promise<SceneC
     frame_sha256: s.frame_sha256 ?? null,
     vision_enrichment: s.vision_enrichment ?? null,
   }));
-  const r = await fetch("/api/scene-context", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segments: sceneSegments }),
-  });
-  if (!r.ok) {
-    const bodyText = await r.text().catch(() => "");
-    throw new Error(`POST /api/scene-context ${r.status}: ${bodyText.slice(0, 600)}`);
-  }
-  return (await r.json()) as SceneContextBatch;
+  return postJson<SceneContextBatch>("/api/scene-context", { segments: sceneSegments });
 }
 
 // Director Mode Stage B2: register adaptation. Fields the server omits when
@@ -276,16 +280,7 @@ export async function postDirectorAdaptation(
   from = "en",
   to = "es",
 ): Promise<DirectorAdaptationBatch> {
-  const r = await fetch("/api/director-adaptation", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segments, sourceLanguage: from, targetLanguage: to }),
-  });
-  if (!r.ok) {
-    const bodyText = await r.text().catch(() => "");
-    throw new Error(`POST /api/director-adaptation ${r.status}: ${bodyText.slice(0, 600)}`);
-  }
-  return (await r.json()) as DirectorAdaptationBatch;
+  return postJson<DirectorAdaptationBatch>("/api/director-adaptation", { segments, sourceLanguage: from, targetLanguage: to });
 }
 
 // Audition casting: takes whose meaning gate ran before synthesis; timing is
@@ -356,16 +351,7 @@ export async function postAudition(
     duration_seconds: s.duration_seconds ?? null,
     speaker_id: s.speaker_id ?? null,
   }));
-  const r = await fetch("/api/audition", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segments: auditionSegments, sourceLanguage: from, targetLanguage: to }),
-  });
-  if (!r.ok) {
-    const bodyText = await r.text().catch(() => "");
-    throw new Error(`POST /api/audition ${r.status}: ${bodyText.slice(0, 600)}`);
-  }
-  return (await r.json()) as AuditionReport;
+  return postJson<AuditionReport>("/api/audition", { segments: auditionSegments, sourceLanguage: from, targetLanguage: to });
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
@@ -388,40 +374,30 @@ export async function postTranslate(
   from = "en",
   to = "es",
 ): Promise<TranslateBatch> {
-  const r = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segments, sourceLanguage: from, targetLanguage: to }),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => "");
-    throw new Error(`POST /api/translate ${r.status}: ${body.slice(0, 600)}`);
-  }
-  return (await r.json()) as TranslateBatch;
+  return postJson<TranslateBatch>("/api/translate", { segments, sourceLanguage: from, targetLanguage: to });
+}
+
+export type QaRequestOptions = { maxAttempts?: number; toleranceFraction?: number; targetCps?: number };
+
+// Only the options the caller set are sent; the server falls back to its defaults for the rest.
+function qaOptionsBody(options: QaRequestOptions | undefined): Record<string, number> | undefined {
+  const opts: Record<string, number> = {};
+  if (options?.maxAttempts != null) opts.maxAttempts = options.maxAttempts;
+  if (options?.toleranceFraction != null) opts.toleranceFraction = options.toleranceFraction;
+  if (options?.targetCps != null) opts.targetCharactersPerSecond = options.targetCps;
+  return Object.keys(opts).length > 0 ? opts : undefined;
 }
 
 export async function postQa(
   segments: SegmentInput[],
   from = "en",
   to = "es",
-  options?: { maxAttempts?: number; toleranceFraction?: number; targetCps?: number },
+  options?: QaRequestOptions,
 ): Promise<QaReport> {
-  const body: Record<string, unknown> = { segments, sourceLanguage: from, targetLanguage: to };
-  if (options) {
-    const opts: Record<string, unknown> = {};
-    if (options.maxAttempts != null) opts.maxAttempts = options.maxAttempts;
-    if (options.toleranceFraction != null) opts.toleranceFraction = options.toleranceFraction;
-    if (options.targetCps != null) opts.targetCharactersPerSecond = options.targetCps;
-    if (Object.keys(opts).length > 0) body.options = opts;
-  }
-  const r = await fetch("/api/qa", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+  return postJson<QaReport>("/api/qa", {
+    segments,
+    sourceLanguage: from,
+    targetLanguage: to,
+    options: qaOptionsBody(options),
   });
-  if (!r.ok) {
-    const bodyText = await r.text().catch(() => "");
-    throw new Error(`POST /api/qa ${r.status}: ${bodyText.slice(0, 600)}`);
-  }
-  return (await r.json()) as QaReport;
 }

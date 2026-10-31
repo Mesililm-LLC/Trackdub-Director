@@ -11,17 +11,7 @@ internal static class RequestValidation
             return "Each segment must have a non-empty 'id' and 'text'.";
         }
 
-        if (HasDuplicateIds(segments.Select(s => s!.Id.Trim())))
-        {
-            return "Duplicate segment ids are not allowed.";
-        }
-
-        if (segments.Count > MaxAuditionSegments)
-        {
-            return $"At most {MaxAuditionSegments} segments are allowed per request.";
-        }
-
-        return null;
+        return ValidateSegmentSet(segments.Select(s => s.Id), segments.Count, MaxAuditionSegments);
     }
 
     private static bool IsIncompleteAuditionSegment(AuditionSegmentInput segment)
@@ -29,10 +19,21 @@ internal static class RequestValidation
         return segment is null || string.IsNullOrWhiteSpace(segment.Id) || segment.Text is null;
     }
 
-    private static bool HasDuplicateIds(IEnumerable<string> ids)
+    // Shared rules for segment lists: ids must be unique after trimming, and the count is capped.
+    private static string? ValidateSegmentSet(IEnumerable<string> ids, int count, int max)
     {
-        List<string> list = ids.ToList();
-        return list.Distinct(StringComparer.Ordinal).Count() != list.Count;
+        List<string> trimmed = ids.Select(id => id.Trim()).ToList();
+        if (trimmed.Distinct(StringComparer.Ordinal).Count() != trimmed.Count)
+        {
+            return "Duplicate segment ids are not allowed.";
+        }
+
+        if (count > max)
+        {
+            return $"At most {max} segments are allowed per request.";
+        }
+
+        return null;
     }
 
     // Builds QaOptions with request overrides > env defaults, same precedence the CLI uses.
@@ -153,17 +154,7 @@ internal static class RequestValidation
             return "Each segment must have a non-empty 'id'.";
         }
 
-        if (HasDuplicateIds(segments.Select(s => s!.Id.Trim())))
-        {
-            return "Duplicate segment ids are not allowed.";
-        }
-
-        if (segments.Count > MaxAdaptationSegments)
-        {
-            return $"At most {MaxAdaptationSegments} segments are allowed per request.";
-        }
-
-        return null;
+        return ValidateSegmentSet(segments.Select(s => s.Id), segments.Count, MaxAdaptationSegments);
     }
 
     // Trims the caller's language, or falls back to the default when it is missing or blank.

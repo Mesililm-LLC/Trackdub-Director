@@ -421,8 +421,9 @@ public sealed class AuditionService
         take.Characters = result.CharactersBilled;
         run.ElevenLabsCharacters += result.CharactersBilled;
         run.TakesSynthesized++;
-        take.MeasuredSeconds = AudioDuration.Seconds(result.AudioBytes, _tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
-        take.AudioBytes = AudioDuration.ToWav(result.AudioBytes, _tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
+        var pcm = new PcmFormat(_tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
+        take.MeasuredSeconds = AudioDuration.Seconds(result.AudioBytes, pcm);
+        take.AudioBytes = AudioDuration.ToWav(result.AudioBytes, pcm);
         take.TimingVerdict = DurationEstimator.Fits(take.MeasuredSeconds.Value, take.WindowSeconds, _options.ToleranceFraction)
             ? AuditionTimingVerdict.Pass
             : AuditionTimingVerdict.Fail;
