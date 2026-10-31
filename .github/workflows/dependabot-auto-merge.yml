@@ -1,0 +1,89 @@
+name: Dependabot auto-merge
+
+# Enable GitHub-native auto-merge on Dependabot pull requests, and squash-merge
+# them once the required `CI` check (the aggregator job in ci.yml, enforced by
+# the `protect` ruleset on main) is green. This workflow does not merge PRs
+# whose tests failed: the workflow_run path only runs when CI succeeded, and
+# GitHub-native auto-merge still waits for required checks.
+#
+# enablePullRequestAutoMerge cannot be enabled while the PR is in "unstable"
+# status (the usual state at pull_request opened, before required checks have
+# registered) or "clean" status (ready to merge now). Those GraphQL errors are
+# retried or turned into an immediate squash-merge. They are not success.
+#
+# Implemented with `curl` against the REST + GraphQL APIs rather than the `gh`
+# CLI: the ARC `docker-desktop` scale-set image does not ship `gh` (a `gh pr
+# merge` step failed with exit 127 "gh: command not found"). `curl` is always
+# present.
+#
+# Guardrails honoured (enforced by .github/scripts/*.py in the `yaml` CI job):
+#   - `pull_request` and `workflow_run`, never `pull_request_target`.
+#   - `runs-on: docker-desktop` (laptop ARC scale set); no GitHub-hosted runners.
+#   - No marketplace actions at all — only `actions/checkout`, `curl`, and the
+#     runner's shell.
+on:
+  pull_request:
+    branches: [main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+# Read-only by default; the single job below widens to what auto-merge needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge for Dependabot
+    # Same-repo Dependabot PRs only. Fork PRs and human PRs are skipped, so the
+    # elevated token below is never exposed to untrusted head code.
+    #
+    # Gate pull_request on the PR *author* (pull_request.user.login), not
+    # github.actor. github.actor is whoever triggered THIS event, so a rebase
+    # or a human interaction on a Dependabot PR (a `synchronize` event) would
+    # make the actor a person and wrongly skip the job.
+    #
+    # workflow_run runs from main after CI completes. Head-branch prefix is a
+    # cheap filter; the helper still verifies dependabot[bot] + same-repo.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login == 'dependabot[bot]' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       startsWith(github.event.workflow_run.head_branch, 'dependabot/'))
+    runs-on: docker-desktop
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Clean Workspace
+        shell: bash
+        run: |
+          git config --global --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+          chmod -R u+w . || true
+          rm -rf ./* || true
+          rm -rf ./.git || true
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Approve, enable auto-merge, or squash-merge
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API: ${{ github.api_url }}
+          GQL: ${{ github.graphql_url }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: bash .github/scripts/dependabot-auto-merge.sh

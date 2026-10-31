@@ -1,0 +1,183 @@
+# Interactive opencode agent: /oc and /opencode comment commands for fixes,
+# follow-ups, targeted changes, and explicit reviews.
+name: opencode
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  # Separate issue comments and review comments so a batch of line-level
+  # review comments cannot cancel a pending `/oc` issue comment, and vice versa.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  opencode:
+    if: |
+      !endsWith(github.actor, '[bot]') &&
+      (
+        github.event_name == 'pull_request_review_comment' &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+        (startsWith(github.event.comment.body, '/oc ') ||
+        github.event.comment.body == '/oc' ||
+        startsWith(github.event.comment.body, '/opencode ') ||
+        github.event.comment.body == '/opencode')
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+        (startsWith(github.event.comment.body, '/oc ') ||
+        github.event.comment.body == '/oc' ||
+        startsWith(github.event.comment.body, '/opencode ') ||
+        github.event.comment.body == '/opencode')
+      )
+    runs-on: docker-desktop
+    timeout-minutes: 45
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    steps:
+      - name: Clean stale global git credentials
+        shell: bash
+        run: |
+          # Self-hosted runners can carry a persistent http.https://github.com/.extraheader
+          # from previous opencode runs. If left in place, actions/checkout's includeIf
+          # auth adds a second Authorization header and GitHub rejects the fetch.
+          git config --global --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+
+      - name: Record job start time
+        id: job_start
+        shell: bash
+        run: printf 'epoch=%s\n' "$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Committer identity for agent commits. Push and API auth come from the
+      # OpenCode app token the CLI resolves via OIDC (use-github-token is off),
+      # so summaries and pushes post as opencode-agent[bot] while ad-hoc `gh`
+      # calls use the job token and appear as github-actions[bot].
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install prerequisites (self-hosted)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUDO=""
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            SUDO="sudo"
+          fi
+          can_install() { [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; }
+          install_apt() {
+            if ! command -v "$1" >/dev/null 2>&1; then
+              if can_install; then
+                $SUDO apt-get update -qq
+                $SUDO apt-get install -y -qq "$1"
+              else
+                echo "::warning::Missing $1 and no passwordless sudo/root; skipping install"
+              fi
+            fi
+          }
+          install_apt jq
+          install_apt curl
+          if ! command -v gh >/dev/null 2>&1; then
+            if can_install; then
+              $SUDO mkdir -p -m 755 /etc/apt/keyrings
+              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | $SUDO tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+              $SUDO chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | $SUDO tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+              $SUDO apt-get update -qq
+              $SUDO apt-get install -y -qq gh
+            else
+              echo "::warning::Missing gh and no passwordless sudo/root; skipping install"
+            fi
+          fi
+
+      # The org carries two Cloudflare credentials (CLOUDFLARE_API_KEY and
+      # CLOUDFLARE_API_TOKEN) and only one is scoped for Workers AI. Probe each
+      # against the chain's lead model and export the winner under both env
+      # names: the action's cf: probe reads CLOUDFLARE_API_TOKEN while
+      # opencode's cloudflare-workers-ai provider authenticates with
+      # CLOUDFLARE_API_KEY. When neither reaches Workers AI, cf: chain entries
+      # are skipped and the zen: fallbacks still run.
+      - name: Select a working Cloudflare credential
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          for tok in "${CF_KEY:-}" "${CF_TOKEN:-}"; do
+            [[ -n "${tok}" ]] || continue
+            if curl -sf --max-time 20 -X POST \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions" \
+              -H "Authorization: Bearer ${tok}" -H "Content-Type: application/json" \
+              -d '{"model":"@cf/zai-org/glm-5.2","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
+              >/dev/null 2>&1; then
+              {
+                echo "CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}"
+                echo "CLOUDFLARE_API_TOKEN=${tok}"
+                echo "CLOUDFLARE_API_KEY=${tok}"
+              } >> "${GITHUB_ENV}"
+              echo "::notice::Cloudflare Workers AI credential selected"
+              exit 0
+            fi
+          done
+          echo "::warning::No Cloudflare credential reached Workers AI; cf: models will be skipped"
+
+      # Model probing, verified install, agent run with retry/salvage, and the
+      # leaked-path comment guard are handled by the action. App-token mode
+      # (OIDC exchange, needs the OpenCode app installed on the repo) posts
+      # summaries and pushes as opencode-agent[bot]; GH_TOKEN stays the job
+      # token so ad-hoc `gh` writes appear as github-actions[bot].
+      # `job-started-at` anchors the 40-minute agent budget to job start so the
+      # retry and the guard still run inside the 45-minute job limit.
+      # CLOUDFLARE_* env comes from the credential-selection step above (step
+      # env would override GITHUB_ENV).
+      - name: Run opencode
+        uses: tonythethompson/opencode-review-threads@v1
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Job token (not the GH_TOKEN PAT) so the agent's ad-hoc `gh` writes
+          # post as github-actions[bot]; the CLI's own writes use the app token.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        with:
+          job-started-at: ${{ steps.job_start.outputs.epoch }}
+          timeout-minutes: '40'
+          # Review runs lead with the Cloudflare GLM/DeepSeek/GPT-OSS chain and
+          # fall back to free Zen models; fix runs lead with the flash chain.
+          models-review: >-
+            cf:@cf/deepseek-ai/deepseek-v4.1-flash-1017,
+            cf:@cf/zai-org/glm-5.2,
+            cf:@cf/deepseek-ai/deepseek-v4-pro-0813,
+            cf:@cf/openai/gpt-oss-120b,
+            cf:@cf/moonshotai/kimi-k2.7-code,
+            zen:big-pickle,
+            zen:glm-5-free,
+            zen:nemotron-3-ultra-free,
+            openrouter:openrouter/free
+          models-fix: >-
+            cf:@cf/deepseek-ai/deepseek-v4-flash-0731,
+            cf:@cf/moonshotai/kimi-k2.7-code,
+            cf:@cf/qwen/qwen3.8-27b,
+            cf:@cf/openai/gpt-oss-120b,
+            zen:nemotron-3.5-lightning-free,
+            zen:big-pickle,
+            zen:glm-5-free,
+            openrouter:openrouter/free
