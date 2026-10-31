@@ -415,14 +415,21 @@ public sealed class AuditionService
         return null;
     }
 
+    private PcmFormat TtsFormat => new()
+    {
+        SampleRate = _tts.PcmSampleRate,
+        Channels = _tts.PcmChannels,
+        BitsPerSample = _tts.PcmBitsPerSample,
+    };
+
     private void RecordSynthesis(TakeWork take, TtsSynthesisResult result, RunState run)
     {
         take.Synthesized = true;
         take.Characters = result.CharactersBilled;
         run.ElevenLabsCharacters += result.CharactersBilled;
         run.TakesSynthesized++;
-        take.MeasuredSeconds = AudioDuration.Seconds(result.AudioBytes, _tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
-        take.AudioBytes = AudioDuration.ToWav(result.AudioBytes, _tts.PcmSampleRate, _tts.PcmChannels, _tts.PcmBitsPerSample);
+        take.MeasuredSeconds = AudioDuration.Seconds(result.AudioBytes, TtsFormat);
+        take.AudioBytes = AudioDuration.ToWav(result.AudioBytes, TtsFormat);
         take.TimingVerdict = DurationEstimator.Fits(take.MeasuredSeconds.Value, take.WindowSeconds, _options.ToleranceFraction)
             ? AuditionTimingVerdict.Pass
             : AuditionTimingVerdict.Fail;
