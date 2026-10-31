@@ -8,12 +8,13 @@ namespace Trackdub.Director.Tests;
 public sealed class QaServiceTests
 {
     private const string Model = "muse-spark-1.1";
-    private const int TranslationPrompt = 10;
-    private const int TranslationCompletion = 5;
-    private const int MeaningPrompt = 7;
-    private const int MeaningCompletion = 4;
 
-    private static HttpResponseMessage ChatResponse(string content, int promptTokens, int completionTokens)
+    private sealed record CallTokens(int Prompt, int Completion);
+
+    private static readonly CallTokens TranslationTokens = new(10, 5);
+    private static readonly CallTokens MeaningTokens = new(7, 4);
+
+    private static HttpResponseMessage ChatResponse(string content, CallTokens tokens)
     {
         var payload = new
         {
@@ -27,9 +28,9 @@ public sealed class QaServiceTests
             },
             usage = new
             {
-                prompt_tokens = promptTokens,
-                completion_tokens = completionTokens,
-                total_tokens = promptTokens + completionTokens,
+                prompt_tokens = tokens.Prompt,
+                completion_tokens = tokens.Completion,
+                total_tokens = tokens.Prompt + tokens.Completion,
             },
         };
         return new HttpResponseMessage(HttpStatusCode.OK)
@@ -77,7 +78,7 @@ public sealed class QaServiceTests
                 throw new InvalidOperationException("No more canned translations queued.");
             }
 
-            return ChatResponse(Translations.Dequeue(), TranslationPrompt, TranslationCompletion);
+            return ChatResponse(Translations.Dequeue(), TranslationTokens);
         });
 
         private HttpResponseMessage NextMeaningResponse()
@@ -93,7 +94,7 @@ public sealed class QaServiceTests
                 throw new InvalidOperationException("No more canned meaning JSON queued.");
             }
 
-            return ChatResponse(MeaningJsons.Dequeue(), MeaningPrompt, MeaningCompletion);
+            return ChatResponse(MeaningJsons.Dequeue(), MeaningTokens);
         }
     }
 
@@ -110,56 +111,44 @@ public sealed class QaServiceTests
             => _handler(request, cancellationToken);
     }
 
-    private static IDisposable EnvShim(string key, string value)
+    /// <summary>
+    /// Sets environment variables for the scope and restores the previous values on dispose.
+    /// </summary>
+    private sealed class EnvScope : IDisposable
     {
-        string? prev = Environment.GetEnvironmentVariable(key);
-        Environment.SetEnvironmentVariable(key, value);
-        return new Restore(key, prev);
-    }
+        private readonly Dictionary<string, string?> _previous = new();
 
-    private sealed class Restore : IDisposable
-    {
-        private readonly string _key;
-        private readonly string? _prev;
-
-        public Restore(string key, string? prev)
+        public EnvScope(IReadOnlyDictionary<string, string> values)
         {
-            _key = key;
-            _prev = prev;
+            foreach ((string key, string value) in values)
+            {
+                _previous[key] = Environment.GetEnvironmentVariable(key);
+                Environment.SetEnvironmentVariable(key, value);
+            }
         }
-
-        public void Dispose() => Environment.SetEnvironmentVariable(_key, _prev);
-    }
-
-    private static IDisposable FakeAuth()
-    {
-        var a = EnvShim("META_API_KEY", "test-fake-key");
-        var b = EnvShim("META_MODEL", Model);
-        var c = EnvShim("META_MODEL_API_BASE_URL", "https://api.meta.ai/v1");
-        var d = EnvShim("META_REASONING_EFFORT", "low");
-        return new Composite(a, b, c, d);
-    }
-
-    private sealed class Composite : IDisposable
-    {
-        private readonly IDisposable[] _items;
-
-        public Composite(params IDisposable[] items) => _items = items;
 
         public void Dispose()
         {
-            foreach (IDisposable d in _items)
+            foreach ((string key, string? previous) in _previous)
             {
-                d.Dispose();
+                Environment.SetEnvironmentVariable(key, previous);
             }
         }
     }
 
-    private static string MeaningPassJson(string explanation = "Meaning preserved.")
-        => JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation });
+    private static IDisposable FakeAuth() => new EnvScope(new Dictionary<string, string>
+    {
+        ["META_API_KEY"] = "test-fake-key",
+        ["META_MODEL"] = Model,
+        ["META_MODEL_API_BASE_URL"] = "https://api.meta.ai/v1",
+        ["META_REASONING_EFFORT"] = "low",
+    });
 
-    private static string MeaningFailJson(string[] issues, string explanation)
-        => JsonSerializer.Serialize(new { verdict = "fail", issues, explanation });
+    private static string MeaningPassJson()
+        => JsonSerializer.Serialize(new { verdict = "pass", issues = Array.Empty<string>(), explanation = "Meaning preserved." });
+
+    private static string MeaningFailJson(params string[] issues)
+        => JsonSerializer.Serialize(new { verdict = "fail", issues, explanation = "Meaning changed." });
 
     private static async Task<string> ReadBodyAsync(HttpRequestMessage request, CancellationToken ct)
         => request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -201,7 +190,7 @@ public sealed class QaServiceTests
     /// </summary>
     private static void AssertMeaningProvenance(QaAttemptReport a)
     {
-        Assert.Equal((MeaningPrompt, MeaningCompletion, MeaningGate.PromptTemplateVersion, "api.meta.ai"), (a.MeaningPromptTokens, a.MeaningCompletionTokens, a.MeaningPromptTemplateVersion, a.MeaningEndpointHost));
+        Assert.Equal((MeaningTokens.Prompt, MeaningTokens.Completion, MeaningGate.PromptTemplateVersion, "api.meta.ai"), (a.MeaningPromptTokens, a.MeaningCompletionTokens, a.MeaningPromptTemplateVersion, a.MeaningEndpointHost));
         Assert.False(string.IsNullOrWhiteSpace(a.MeaningModelId));
         Assert.False(string.IsNullOrWhiteSpace(a.MeaningTimestampUtc));
     }
@@ -241,7 +230,7 @@ public sealed class QaServiceTests
         Assert.Equal(("Hola.", "Hola."), (first.Translation, seg.FinalTranslation));
 
         // TokenUsage sums translation + meaning.
-        Assert.Equal((TranslationPrompt + MeaningPrompt, TranslationCompletion + MeaningCompletion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
+        Assert.Equal((TranslationTokens.Prompt + MeaningTokens.Prompt, TranslationTokens.Completion + MeaningTokens.Completion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -255,7 +244,7 @@ public sealed class QaServiceTests
                 "Esta es una traduccion muy larga que no cabe",
                 "Traduccion corta",
             ]),
-            MeaningJsons = new Queue<string>([MeaningPassJson("Short but faithful.")]),
+            MeaningJsons = new Queue<string>([MeaningPassJson()]),
         };
         QaReport report = await RunSegments(
             meaning.ToHandler(),
@@ -273,7 +262,7 @@ public sealed class QaServiceTests
         Assert.Equal((QaVerdict.Pass, 0, 1, 1, "Traduccion corta"), (seg.FinalVerdict, report.Totals.FirstPassCount, report.Totals.FinalPassCount, report.Totals.TotalRevisions, seg.FinalTranslation));
 
         // Token usage: 2 translations (10+10 prompt, 5+5 comp) + 1 meaning (7+4).
-        Assert.Equal((20 + MeaningPrompt, 10 + MeaningCompletion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
+        Assert.Equal((2 * TranslationTokens.Prompt + MeaningTokens.Prompt, 2 * TranslationTokens.Completion + MeaningTokens.Completion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -308,7 +297,7 @@ public sealed class QaServiceTests
         Assert.Equal((QaVerdict.Fail, 0, 3, "Texto largo"), (seg.FinalVerdict, report.Totals.FinalPassCount, report.Totals.TotalRevisions, seg.FinalTranslation));
 
         // 4 model calls (initial + 3 revisions), no meaning tokens.
-        Assert.Equal((40, 20), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
+        Assert.Equal((4 * TranslationTokens.Prompt, 4 * TranslationTokens.Completion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -350,8 +339,8 @@ public sealed class QaServiceTests
                 "Necesitamos otra toma.",
             ]),
             MeaningJsons = new Queue<string>([
-                MeaningFailJson(["dropped modality/subject 'Necesitamos' (need) — changes from obligation to simple assertion"], "Candidate omits the subject and modality 'we need', changing the intent."),
-                MeaningPassJson("Compact faithful paraphrase preserves meaning."),
+                MeaningFailJson("dropped modality/subject 'Necesitamos' (need) — changes from obligation to simple assertion"),
+                MeaningPassJson(),
             ]),
             InspectRevisionBody = body => revisionContainedIssues |= body.Contains("Material meaning issues to fix", StringComparison.Ordinal)
                 && body.Contains("Necesitamos", StringComparison.Ordinal)
@@ -380,7 +369,7 @@ public sealed class QaServiceTests
         AssertMeaningTokensRecorded(unfaithful, faithful);
 
         // 3 translations (30 prompt, 15 comp) + 2 meanings (14 prompt, 8 comp).
-        Assert.Equal((30 + 2 * MeaningPrompt, 15 + 2 * MeaningCompletion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
+        Assert.Equal((3 * TranslationTokens.Prompt + 2 * MeaningTokens.Prompt, 3 * TranslationTokens.Completion + 2 * MeaningTokens.Completion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -398,8 +387,8 @@ public sealed class QaServiceTests
                 "Necesitamos otra toma.",
             ]),
             MeaningJsons = new Queue<string>([
-                MeaningFailJson(["dropped modality"], "Need was lost."),
-                MeaningFailJson(["dropped subject"], "Subject was lost."),
+                MeaningFailJson("dropped modality"),
+                MeaningFailJson("dropped subject"),
                 MeaningPassJson(),
             ]),
             InspectRevisionBody = body => revisionPrompts.Add(UserPrompt(body)),
@@ -505,9 +494,9 @@ public sealed class QaServiceTests
                 "Una toma mas.",
             ]),
             MeaningJsons = new Queue<string>([
-                MeaningFailJson(["dropped modality Necesitamos"], "Omits need."),
-                MeaningFailJson(["dropped modality Necesitamos"], "Still omits."),
-                MeaningFailJson(["dropped modality Necesitamos"], "Still omits."),
+                MeaningFailJson("dropped modality Necesitamos"),
+                MeaningFailJson("dropped modality Necesitamos"),
+                MeaningFailJson("dropped modality Necesitamos"),
             ]),
         };
         QaReport report = await RunSegments(
@@ -604,7 +593,7 @@ public sealed class QaServiceTests
             }
 
             Interlocked.Increment(ref translateCalls);
-            return ChatResponse("Hola.", TranslationPrompt, TranslationCompletion);
+            return ChatResponse("Hola.", TranslationTokens);
         });
 
         // Caller cancellation must surface, not be converted into a per-segment MeaningVerdict.Error
@@ -631,7 +620,7 @@ public sealed class QaServiceTests
                 throw new TaskCanceledException("A task was canceled.");
             }
 
-            return ChatResponse("Hola.", TranslationPrompt, TranslationCompletion);
+            return ChatResponse("Hola.", TranslationTokens);
         });
 
         var segs = new[] { new QaSegmentInput("seg-cancel", "Hello.", DurationSeconds: 4.2) };
@@ -705,7 +694,7 @@ public sealed class QaServiceTests
             Translations = new Queue<string>(["Hola.", "Hola de nuevo."]),
             MeaningJsons = new Queue<string>([
                 JsonSerializer.Serialize(new { verdict = "pass", issues = new[] { "dropped subject" }, explanation = "Claims pass but lists issues" }),
-                JsonSerializer.Serialize(new { verdict = "fail", issues = new[] { "still off" }, explanation = "Still off." }),
+                MeaningFailJson("still off"),
             ]),
         };
         QaReport report = await RunSegments(
@@ -727,7 +716,7 @@ public sealed class QaServiceTests
         var meaning = new ScriptedMeta
         {
             Translations = new Queue<string>(["Nos hace falta una toma mas."]),
-            MeaningJsons = new Queue<string>([MeaningPassJson("Idiomatic but faithful paraphrase.")]),
+            MeaningJsons = new Queue<string>([MeaningPassJson()]),
         };
         QaReport report = await RunSegments(
             meaning.ToHandler(),
