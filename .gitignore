@@ -15,3 +15,8 @@ web/dist/
 *.mp4
 /samples/voa10/media/
 IDEA.md
+
+# Generated frontend build output (npm run build writes it into wwwroot).
+src/Trackdub.Director.Server/wwwroot/index.html
+src/Trackdub.Director.Server/wwwroot/assets/*.js
+src/Trackdub.Director.Server/wwwroot/assets/*.css
