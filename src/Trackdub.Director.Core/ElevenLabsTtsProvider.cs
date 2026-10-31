@@ -58,7 +58,7 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{ElevenLabsAuth.GetBaseUrl()}/voices");
         AddAuth(request);
-        string body = await SendForTextAsync(request, cancellationToken).ConfigureAwait(false);
+        byte[] body = await SendForBytesAsync(request, cancellationToken).ConfigureAwait(false);
         return ParseVoices(body);
     }
 
@@ -97,12 +97,6 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
-    private async Task<string> SendForTextAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        byte[] bytes = await SendForBytesAsync(request, cancellationToken).ConfigureAwait(false);
-        return Encoding.UTF8.GetString(bytes);
-    }
-
     private async Task<byte[]> SendForBytesAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         HttpResponseMessage response;
@@ -135,7 +129,7 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
         }
     }
 
-    private static IReadOnlyList<TtsVoice> ParseVoices(string body)
+    private static IReadOnlyList<TtsVoice> ParseVoices(byte[] body)
     {
         JsonDocument doc;
         try
@@ -144,41 +138,51 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
         }
         catch (JsonException ex)
         {
-            throw new TtsApiException($"Failed to parse ElevenLabs voice list: {Truncate(body)}", ex);
+            throw new TtsApiException($"Failed to parse ElevenLabs voice list: {Truncate(Encoding.UTF8.GetString(body))}", ex);
         }
 
         using (doc)
         {
             if (!doc.RootElement.TryGetProperty("voices", out JsonElement voices) || voices.ValueKind != JsonValueKind.Array)
             {
-                throw new TtsApiException($"Unexpected ElevenLabs voice list shape: {Truncate(body)}");
+                throw new TtsApiException($"Unexpected ElevenLabs voice list shape: {Truncate(Encoding.UTF8.GetString(body))}");
             }
 
             var result = new List<TtsVoice>();
             foreach (JsonElement voice in voices.EnumerateArray())
             {
-                if (voice.ValueKind != JsonValueKind.Object)
+                TtsVoice? parsed = ParseVoice(voice);
+                if (parsed is not null)
                 {
-                    continue;
+                    result.Add(parsed);
                 }
-
-                string? id = ReadString(voice, "voice_id");
-                string? name = ReadString(voice, "name");
-                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name))
-                {
-                    continue;
-                }
-
-                result.Add(new TtsVoice(
-                    id.Trim(),
-                    name.Trim(),
-                    ReadString(voice, "category")?.Trim(),
-                    ReadGender(voice),
-                    ReadStringArray(voice, "high_quality_base_model_ids")));
             }
 
             return result;
         }
+    }
+
+    // Null for entries that are not objects or lack a voice id or name.
+    private static TtsVoice? ParseVoice(JsonElement voice)
+    {
+        if (voice.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        string? id = ReadString(voice, "voice_id");
+        string? name = ReadString(voice, "name");
+        if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        return new TtsVoice(
+            id.Trim(),
+            name.Trim(),
+            ReadString(voice, "category")?.Trim(),
+            ReadGender(voice),
+            ReadStringArray(voice, "high_quality_base_model_ids"));
     }
 
     private static string? ReadGender(JsonElement voice)
