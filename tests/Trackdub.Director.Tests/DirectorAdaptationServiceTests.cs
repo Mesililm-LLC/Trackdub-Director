@@ -38,35 +38,44 @@ public sealed class DirectorAdaptationServiceTests
 
             if (body.Contains(DirectorAdaptationService.DirectorMarker, StringComparison.Ordinal))
             {
-                AdaptationCalls++;
-                AdaptationBodies.Add(body);
-                if (AdaptationTransportsError)
-                {
-                    return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-                    {
-                        Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
-                    };
-                }
-
-                return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12, finishReason: AdaptationFinishReason);
+                return AdaptationResponse(body);
             }
 
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
-                MeaningCalls++;
-                if (MeaningTransportsError)
-                {
-                    return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-                    {
-                        Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
-                    };
-                }
-
-                return ChatOk(MeaningContent, promptTokens: 90, completionTokens: 30, reasoningTokens: null);
+                return MeaningResponse();
             }
 
             throw new InvalidOperationException($"Unexpected request body: {body}");
         }
+
+        private HttpResponseMessage AdaptationResponse(string body)
+        {
+            AdaptationCalls++;
+            AdaptationBodies.Add(body);
+            if (AdaptationTransportsError)
+            {
+                return UpstreamError();
+            }
+
+            return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12, finishReason: AdaptationFinishReason);
+        }
+
+        private HttpResponseMessage MeaningResponse()
+        {
+            MeaningCalls++;
+            if (MeaningTransportsError)
+            {
+                return UpstreamError();
+            }
+
+            return ChatOk(MeaningContent, promptTokens: 90, completionTokens: 30, reasoningTokens: null);
+        }
+
+        private static HttpResponseMessage UpstreamError() => new(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
+        };
     }
 
     private static HttpResponseMessage ChatOk(string content, int promptTokens, int completionTokens, int? reasoningTokens, string finishReason = "stop")
@@ -457,10 +466,14 @@ public sealed class DirectorAdaptationServiceTests
         }
     }
 
-    [Fact]
-    public async Task MeaningTransportError_IsTerminalFailWithErrorVerdict()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TransportError_FailsTheSegmentAsTerminal(bool adaptationFails)
     {
-        var stub = new LaneStub { MeaningTransportsError = true };
+        var stub = adaptationFails
+            ? new LaneStub { AdaptationTransportsError = true }
+            : new LaneStub { MeaningTransportsError = true };
         (DirectorAdaptationService service, IDisposable scope) = BuildService(stub);
         using var _ = scope;
 
@@ -468,28 +481,20 @@ public sealed class DirectorAdaptationServiceTests
 
         DirectorAdaptationSegmentResult result = Assert.Single(batch.Segments);
         Assert.Equal(DirectorAdaptationStatus.Failed, result.Status);
+        Assert.Equal(1, stub.AdaptationCalls);
+
+        if (adaptationFails)
+        {
+            Assert.NotNull(result.Error);
+            Assert.Contains("HTTP 500", result.Error, StringComparison.Ordinal);
+            Assert.Equal(0, stub.MeaningCalls);
+            return;
+        }
+
         Assert.Equal(QaVerdict.Pass, result.TimingVerdict);
         Assert.NotNull(result.Meaning);
         Assert.Equal(MeaningVerdict.Error, result.Meaning.Verdict);
         Assert.Equal(0, result.Meaning.Usage.TotalTokens);
-        Assert.Equal(1, stub.AdaptationCalls);
         Assert.Equal(1, stub.MeaningCalls);
-    }
-
-    [Fact]
-    public async Task AdaptationTransportError_FailsTheSegmentWithoutRunningTheMeaningGate()
-    {
-        var stub = new LaneStub { AdaptationTransportsError = true };
-        (DirectorAdaptationService service, IDisposable scope) = BuildService(stub);
-        using var _ = scope;
-
-        DirectorAdaptationBatch batch = await service.RunAsync([OptedIn()], "en", "es");
-
-        DirectorAdaptationSegmentResult result = Assert.Single(batch.Segments);
-        Assert.Equal(DirectorAdaptationStatus.Failed, result.Status);
-        Assert.NotNull(result.Error);
-        Assert.Contains("HTTP 500", result.Error, StringComparison.Ordinal);
-        Assert.Equal(1, stub.AdaptationCalls);
-        Assert.Equal(0, stub.MeaningCalls);
     }
 }
