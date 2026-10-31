@@ -11,7 +11,7 @@ namespace Trackdub.Director.Core;
 /// with the reason recorded; an unmodified frame is never passed off as
 /// localised.
 /// </summary>
-public sealed class VisualLocalisationService
+public sealed class VisualLocalisationService : IDisposable
 {
     /// <summary>Template "image-edit-v1": the probe's working instruction with source/target filled in.</summary>
     public const string PromptTemplateVersion = "image-edit-v1";
@@ -20,6 +20,7 @@ public sealed class VisualLocalisationService
     public const int CropPaddingPixels = 20;
 
     private readonly IMuseImageClient _client;
+    private readonly bool _ownsClient;
 
     public VisualLocalisationService(IMuseImageClient client)
     {
@@ -29,6 +30,15 @@ public sealed class VisualLocalisationService
     public VisualLocalisationService()
         : this(new MetaMuseImageClient())
     {
+        _ownsClient = true;
+    }
+
+    public void Dispose()
+    {
+        if (_ownsClient && _client is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 
     public static string BuildInstruction(string sourceText, string targetText)

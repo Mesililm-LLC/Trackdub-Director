@@ -7,7 +7,14 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        // Cross-origin browser calls are a dev-only convenience (e.g. a
+        // standalone frontend). In production the SPA is served same-origin,
+        // and endpoints like /api/visual-localisation trigger paid model
+        // calls, so no cross-origin policy is emitted outside Development.
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        }
     });
 });
 

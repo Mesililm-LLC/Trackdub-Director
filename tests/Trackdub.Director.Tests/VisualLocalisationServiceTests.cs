@@ -37,6 +37,18 @@ public sealed class VisualLocalisationServiceTests
         }
     }
 
+    private sealed class DisposableFakeImageClient : IMuseImageClient, IDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
+
+        public Task<MuseImageEditResult> EditAsync(RasterImage image, string instruction, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("No calls expected.");
+        }
+    }
+
     private static RasterImage Solid(int width, int height, byte r, byte g, byte b)
     {
         byte[] rgb = new byte[width * height * 3];
@@ -184,6 +196,23 @@ public sealed class VisualLocalisationServiceTests
         Assert.Equal(0, result.ImageCalls);
         Assert.Equal(VisualLocalisationStatus.Failed, result.Status);
         Assert.Contains("does not lie inside", result.Error ?? string.Empty);
+    }
+
+    [Fact]
+    public void Dispose_does_not_dispose_an_injected_client()
+    {
+        var fake = new DisposableFakeImageClient();
+        var service = new VisualLocalisationService(fake);
+        service.Dispose();
+        Assert.False(fake.Disposed);
+    }
+
+    [Fact]
+    public void Dispose_on_the_default_constructor_disposes_the_owned_client()
+    {
+        var service = new VisualLocalisationService();
+        service.Dispose();
+        service.Dispose();
     }
 
     [WindowsFact]
