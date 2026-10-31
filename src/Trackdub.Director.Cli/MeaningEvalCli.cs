@@ -48,9 +48,11 @@ internal static class MeaningEvalCli
         string[] known = ["--input", "--output", "--from", "--to"];
         for (int i = 0; i < args.Length; i += 2)
         {
-            if (!known.Contains(args[i]) || i + 1 >= args.Length)
+            error = !known.Contains(args[i]) ? $"Unexpected argument '{args[i]}' for 'meaning-eval'."
+                : i + 1 >= args.Length ? $"Missing value for '{args[i]}'."
+                : null;
+            if (error is not null)
             {
-                error = $"Unexpected argument '{args[i]}' for 'meaning-eval'.";
                 return null;
             }
 
