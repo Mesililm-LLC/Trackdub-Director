@@ -27,13 +27,18 @@ static async Task<int> RunAsync(string[] args)
         "translate" => await RunTranslateAsync(args[1..]).ConfigureAwait(false),
         "models" => await RunModelsAsync(args[1..]).ConfigureAwait(false),
         "qa" => await QaCli.RunAsync(args[1..]).ConfigureAwait(false),
-        _ => UnknownCommand(args[0]),
+        _ => RunOfflineCommand(verb, args),
     };
+}
+
+static int RunOfflineCommand(string verb, string[] args)
+{
+    return verb == "sign-shot" ? SignShotCli.Run(args[1..]) : UnknownCommand(args[0]);
 }
 
 static int UnknownCommand(string raw)
 {
-    Console.Error.WriteLine($"Unknown command '{raw}'. Expected 'smoke', 'translate', 'models', or 'qa'.");
+    Console.Error.WriteLine($"Unknown command '{raw}'. Expected 'smoke', 'translate', 'models', 'qa', or 'sign-shot'.");
     PrintUsage();
     return 1;
 }
@@ -234,6 +239,7 @@ static void PrintUsage()
     Console.WriteLine("  translate  Batch translate a segments JSON file.");
     Console.WriteLine("  models     List models available to this account (GET /models).");
     Console.WriteLine("  qa         Translate + timing QA loop (bounce-back revisions with report).");
+    Console.WriteLine("  sign-shot  Extend a localised sign frame across a shot, gated on the shot being static.");
     Console.WriteLine();
     Console.WriteLine("Options:");
     Console.WriteLine("  -h, --help   Show help.");

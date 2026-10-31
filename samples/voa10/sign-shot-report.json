@@ -1,0 +1,1861 @@
+{
+  "stage": "static-shot-composite",
+  "status": "Composited",
+  "reason": null,
+  "video": "samples/voa10/media/demo/demo-dub.mp4",
+  "reference_frame": "samples/voa10/frames/hero-0242.jpg",
+  "localised_frame": "samples/voa10/frames/localised/hero-0242-cafeteria.png",
+  "box": {
+    "x1": 449,
+    "y1": 145,
+    "x2": 751,
+    "y2": 534
+  },
+  "window": {
+    "start_seconds": 2.36,
+    "end_seconds": 12.76
+  },
+  "fps": 25,
+  "metric": "luma SSIM over non-overlapping 8x8 blocks of the box region, frame vs reference frame; gate on the block mean SSIM and on the largest single-block mean-luma shift",
+  "min_ssim_threshold": 0.95,
+  "max_block_luma_shift_threshold": 30,
+  "frames_checked": 260,
+  "ssim_min": 0.9879,
+  "ssim_min_frame": 263,
+  "ssim_mean": 0.9936,
+  "block_luma_shift_max": 13.63,
+  "block_luma_shift_max_frame": 219,
+  "first_failing_frame": null,
+  "frames_composited": 260,
+  "outside_box_diff_max": 0,
+  "image_calls": 0,
+  "output": "samples/voa10/media/demo/demo-dub-signshot.mp4",
+  "notes": [
+    "image_calls is 0: this stage reuses one already-localised frame; that repaint\u0027s Muse Image cost is recorded in the localisation manifest.",
+    "outside_box_diff_max is counted on decoded RGB frames before encoding; the h264 output is lossy everywhere, including outside the box.",
+    "Frame times assume a constant frame rate (index / fps)."
+  ],
+  "timestamp_utc": "2026-10-31T17:44:46.8772300Z",
+  "frames": [
+    {
+      "frame_index": 59,
+      "time_seconds": 2.36,
+      "ssim": 0.9939,
+      "max_block_luma_shift": 7.09,
+      "pass": true
+    },
+    {
+      "frame_index": 60,
+      "time_seconds": 2.4,
+      "ssim": 0.994,
+      "max_block_luma_shift": 7.09,
+      "pass": true
+    },
+    {
+      "frame_index": 61,
+      "time_seconds": 2.44,
+      "ssim": 0.9942,
+      "max_block_luma_shift": 7.09,
+      "pass": true
+    },
+    {
+      "frame_index": 62,
+      "time_seconds": 2.48,
+      "ssim": 0.9943,
+      "max_block_luma_shift": 7.09,
+      "pass": true
+    },
+    {
+      "frame_index": 63,
+      "time_seconds": 2.52,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 5.5,
+      "pass": true
+    },
+    {
+      "frame_index": 64,
+      "time_seconds": 2.56,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 5.51,
+      "pass": true
+    },
+    {
+      "frame_index": 65,
+      "time_seconds": 2.6,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 5.51,
+      "pass": true
+    },
+    {
+      "frame_index": 66,
+      "time_seconds": 2.64,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 5.51,
+      "pass": true
+    },
+    {
+      "frame_index": 67,
+      "time_seconds": 2.68,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 5.51,
+      "pass": true
+    },
+    {
+      "frame_index": 68,
+      "time_seconds": 2.72,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.21,
+      "pass": true
+    },
+    {
+      "frame_index": 69,
+      "time_seconds": 2.76,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.1,
+      "pass": true
+    },
+    {
+      "frame_index": 70,
+      "time_seconds": 2.8,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.85,
+      "pass": true
+    },
+    {
+      "frame_index": 71,
+      "time_seconds": 2.84,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.02,
+      "pass": true
+    },
+    {
+      "frame_index": 72,
+      "time_seconds": 2.88,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.02,
+      "pass": true
+    },
+    {
+      "frame_index": 73,
+      "time_seconds": 2.92,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 74,
+      "time_seconds": 2.96,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 75,
+      "time_seconds": 3,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 76,
+      "time_seconds": 3.04,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 77,
+      "time_seconds": 3.08,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 78,
+      "time_seconds": 3.12,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 79,
+      "time_seconds": 3.16,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 80,
+      "time_seconds": 3.2,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 81,
+      "time_seconds": 3.24,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 82,
+      "time_seconds": 3.28,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 83,
+      "time_seconds": 3.32,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 5.03,
+      "pass": true
+    },
+    {
+      "frame_index": 84,
+      "time_seconds": 3.36,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.78,
+      "pass": true
+    },
+    {
+      "frame_index": 85,
+      "time_seconds": 3.4,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.78,
+      "pass": true
+    },
+    {
+      "frame_index": 86,
+      "time_seconds": 3.44,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.72,
+      "pass": true
+    },
+    {
+      "frame_index": 87,
+      "time_seconds": 3.48,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.73,
+      "pass": true
+    },
+    {
+      "frame_index": 88,
+      "time_seconds": 3.52,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.57,
+      "pass": true
+    },
+    {
+      "frame_index": 89,
+      "time_seconds": 3.56,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.51,
+      "pass": true
+    },
+    {
+      "frame_index": 90,
+      "time_seconds": 3.6,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.45,
+      "pass": true
+    },
+    {
+      "frame_index": 91,
+      "time_seconds": 3.64,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 92,
+      "time_seconds": 3.68,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 93,
+      "time_seconds": 3.72,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 94,
+      "time_seconds": 3.76,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 95,
+      "time_seconds": 3.8,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 96,
+      "time_seconds": 3.84,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 97,
+      "time_seconds": 3.88,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 98,
+      "time_seconds": 3.92,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 99,
+      "time_seconds": 3.96,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 100,
+      "time_seconds": 4,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 101,
+      "time_seconds": 4.04,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 102,
+      "time_seconds": 4.08,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 103,
+      "time_seconds": 4.12,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 104,
+      "time_seconds": 4.16,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 105,
+      "time_seconds": 4.2,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 106,
+      "time_seconds": 4.24,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 107,
+      "time_seconds": 4.28,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 108,
+      "time_seconds": 4.32,
+      "ssim": 0.9956,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 109,
+      "time_seconds": 4.36,
+      "ssim": 0.9955,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 110,
+      "time_seconds": 4.4,
+      "ssim": 0.9955,
+      "max_block_luma_shift": 4.56,
+      "pass": true
+    },
+    {
+      "frame_index": 111,
+      "time_seconds": 4.44,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 4.61,
+      "pass": true
+    },
+    {
+      "frame_index": 112,
+      "time_seconds": 4.48,
+      "ssim": 0.9955,
+      "max_block_luma_shift": 4.61,
+      "pass": true
+    },
+    {
+      "frame_index": 113,
+      "time_seconds": 4.52,
+      "ssim": 0.9934,
+      "max_block_luma_shift": 5.82,
+      "pass": true
+    },
+    {
+      "frame_index": 114,
+      "time_seconds": 4.56,
+      "ssim": 0.9934,
+      "max_block_luma_shift": 5.82,
+      "pass": true
+    },
+    {
+      "frame_index": 115,
+      "time_seconds": 4.6,
+      "ssim": 0.9934,
+      "max_block_luma_shift": 5.82,
+      "pass": true
+    },
+    {
+      "frame_index": 116,
+      "time_seconds": 4.64,
+      "ssim": 0.9933,
+      "max_block_luma_shift": 5.82,
+      "pass": true
+    },
+    {
+      "frame_index": 117,
+      "time_seconds": 4.68,
+      "ssim": 0.9933,
+      "max_block_luma_shift": 5.86,
+      "pass": true
+    },
+    {
+      "frame_index": 118,
+      "time_seconds": 4.72,
+      "ssim": 0.9934,
+      "max_block_luma_shift": 5.86,
+      "pass": true
+    },
+    {
+      "frame_index": 119,
+      "time_seconds": 4.76,
+      "ssim": 0.9933,
+      "max_block_luma_shift": 5.93,
+      "pass": true
+    },
+    {
+      "frame_index": 120,
+      "time_seconds": 4.8,
+      "ssim": 0.9934,
+      "max_block_luma_shift": 5.87,
+      "pass": true
+    },
+    {
+      "frame_index": 121,
+      "time_seconds": 4.84,
+      "ssim": 0.9935,
+      "max_block_luma_shift": 5.97,
+      "pass": true
+    },
+    {
+      "frame_index": 122,
+      "time_seconds": 4.88,
+      "ssim": 0.9936,
+      "max_block_luma_shift": 5.94,
+      "pass": true
+    },
+    {
+      "frame_index": 123,
+      "time_seconds": 4.92,
+      "ssim": 0.9936,
+      "max_block_luma_shift": 6.05,
+      "pass": true
+    },
+    {
+      "frame_index": 124,
+      "time_seconds": 4.96,
+      "ssim": 0.9937,
+      "max_block_luma_shift": 6,
+      "pass": true
+    },
+    {
+      "frame_index": 125,
+      "time_seconds": 5,
+      "ssim": 0.9937,
+      "max_block_luma_shift": 5.87,
+      "pass": true
+    },
+    {
+      "frame_index": 126,
+      "time_seconds": 5.04,
+      "ssim": 0.9938,
+      "max_block_luma_shift": 5.8,
+      "pass": true
+    },
+    {
+      "frame_index": 127,
+      "time_seconds": 5.08,
+      "ssim": 0.9939,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 128,
+      "time_seconds": 5.12,
+      "ssim": 0.9939,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 129,
+      "time_seconds": 5.16,
+      "ssim": 0.9939,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 130,
+      "time_seconds": 5.2,
+      "ssim": 0.9941,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 131,
+      "time_seconds": 5.24,
+      "ssim": 0.9942,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 132,
+      "time_seconds": 5.28,
+      "ssim": 0.9944,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 133,
+      "time_seconds": 5.32,
+      "ssim": 0.9945,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 134,
+      "time_seconds": 5.36,
+      "ssim": 0.9948,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 135,
+      "time_seconds": 5.4,
+      "ssim": 0.9949,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 136,
+      "time_seconds": 5.44,
+      "ssim": 0.9949,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 137,
+      "time_seconds": 5.48,
+      "ssim": 0.995,
+      "max_block_luma_shift": 5.79,
+      "pass": true
+    },
+    {
+      "frame_index": 138,
+      "time_seconds": 5.52,
+      "ssim": 0.995,
+      "max_block_luma_shift": 4.89,
+      "pass": true
+    },
+    {
+      "frame_index": 139,
+      "time_seconds": 5.56,
+      "ssim": 0.995,
+      "max_block_luma_shift": 4.77,
+      "pass": true
+    },
+    {
+      "frame_index": 140,
+      "time_seconds": 5.6,
+      "ssim": 0.9951,
+      "max_block_luma_shift": 4.12,
+      "pass": true
+    },
+    {
+      "frame_index": 141,
+      "time_seconds": 5.64,
+      "ssim": 0.9952,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 142,
+      "time_seconds": 5.68,
+      "ssim": 0.9953,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 143,
+      "time_seconds": 5.72,
+      "ssim": 0.9953,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 144,
+      "time_seconds": 5.76,
+      "ssim": 0.9953,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 145,
+      "time_seconds": 5.8,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 146,
+      "time_seconds": 5.84,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 147,
+      "time_seconds": 5.88,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 4.01,
+      "pass": true
+    },
+    {
+      "frame_index": 148,
+      "time_seconds": 5.92,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.77,
+      "pass": true
+    },
+    {
+      "frame_index": 149,
+      "time_seconds": 5.96,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.77,
+      "pass": true
+    },
+    {
+      "frame_index": 150,
+      "time_seconds": 6,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.76,
+      "pass": true
+    },
+    {
+      "frame_index": 151,
+      "time_seconds": 6.04,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 152,
+      "time_seconds": 6.08,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 153,
+      "time_seconds": 6.12,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 154,
+      "time_seconds": 6.16,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 155,
+      "time_seconds": 6.2,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 156,
+      "time_seconds": 6.24,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 157,
+      "time_seconds": 6.28,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 158,
+      "time_seconds": 6.32,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 159,
+      "time_seconds": 6.36,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 160,
+      "time_seconds": 6.4,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 161,
+      "time_seconds": 6.44,
+      "ssim": 0.9954,
+      "max_block_luma_shift": 3.85,
+      "pass": true
+    },
+    {
+      "frame_index": 162,
+      "time_seconds": 6.48,
+      "ssim": 0.9955,
+      "max_block_luma_shift": 3.63,
+      "pass": true
+    },
+    {
+      "frame_index": 163,
+      "time_seconds": 6.52,
+      "ssim": 0.9981,
+      "max_block_luma_shift": 2.1,
+      "pass": true
+    },
+    {
+      "frame_index": 164,
+      "time_seconds": 6.56,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.1,
+      "pass": true
+    },
+    {
+      "frame_index": 165,
+      "time_seconds": 6.6,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.1,
+      "pass": true
+    },
+    {
+      "frame_index": 166,
+      "time_seconds": 6.64,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.1,
+      "pass": true
+    },
+    {
+      "frame_index": 167,
+      "time_seconds": 6.68,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 168,
+      "time_seconds": 6.72,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 169,
+      "time_seconds": 6.76,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 170,
+      "time_seconds": 6.8,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 171,
+      "time_seconds": 6.84,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 172,
+      "time_seconds": 6.88,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 173,
+      "time_seconds": 6.92,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 174,
+      "time_seconds": 6.96,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 175,
+      "time_seconds": 7,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 176,
+      "time_seconds": 7.04,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 177,
+      "time_seconds": 7.08,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 178,
+      "time_seconds": 7.12,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 179,
+      "time_seconds": 7.16,
+      "ssim": 0.998,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 180,
+      "time_seconds": 7.2,
+      "ssim": 0.9979,
+      "max_block_luma_shift": 2.75,
+      "pass": true
+    },
+    {
+      "frame_index": 181,
+      "time_seconds": 7.24,
+      "ssim": 0.9975,
+      "max_block_luma_shift": 3,
+      "pass": true
+    },
+    {
+      "frame_index": 182,
+      "time_seconds": 7.28,
+      "ssim": 0.9972,
+      "max_block_luma_shift": 3.69,
+      "pass": true
+    },
+    {
+      "frame_index": 183,
+      "time_seconds": 7.32,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 3.69,
+      "pass": true
+    },
+    {
+      "frame_index": 184,
+      "time_seconds": 7.36,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 3.69,
+      "pass": true
+    },
+    {
+      "frame_index": 185,
+      "time_seconds": 7.4,
+      "ssim": 0.9966,
+      "max_block_luma_shift": 3.69,
+      "pass": true
+    },
+    {
+      "frame_index": 186,
+      "time_seconds": 7.44,
+      "ssim": 0.9966,
+      "max_block_luma_shift": 3.7,
+      "pass": true
+    },
+    {
+      "frame_index": 187,
+      "time_seconds": 7.48,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 188,
+      "time_seconds": 7.52,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 189,
+      "time_seconds": 7.56,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 190,
+      "time_seconds": 7.6,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 191,
+      "time_seconds": 7.64,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 192,
+      "time_seconds": 7.68,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 193,
+      "time_seconds": 7.72,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 194,
+      "time_seconds": 7.76,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 4.22,
+      "pass": true
+    },
+    {
+      "frame_index": 195,
+      "time_seconds": 7.8,
+      "ssim": 0.9963,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 196,
+      "time_seconds": 7.84,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.22,
+      "pass": true
+    },
+    {
+      "frame_index": 197,
+      "time_seconds": 7.88,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 198,
+      "time_seconds": 7.92,
+      "ssim": 0.9964,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 199,
+      "time_seconds": 7.96,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 200,
+      "time_seconds": 8,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 201,
+      "time_seconds": 8.04,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 202,
+      "time_seconds": 8.08,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 203,
+      "time_seconds": 8.12,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 204,
+      "time_seconds": 8.16,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 205,
+      "time_seconds": 8.2,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 206,
+      "time_seconds": 8.24,
+      "ssim": 0.9966,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 207,
+      "time_seconds": 8.28,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 208,
+      "time_seconds": 8.32,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 4.24,
+      "pass": true
+    },
+    {
+      "frame_index": 209,
+      "time_seconds": 8.36,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 4.25,
+      "pass": true
+    },
+    {
+      "frame_index": 210,
+      "time_seconds": 8.4,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 4.25,
+      "pass": true
+    },
+    {
+      "frame_index": 211,
+      "time_seconds": 8.44,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 4.25,
+      "pass": true
+    },
+    {
+      "frame_index": 212,
+      "time_seconds": 8.48,
+      "ssim": 0.9967,
+      "max_block_luma_shift": 4.25,
+      "pass": true
+    },
+    {
+      "frame_index": 213,
+      "time_seconds": 8.52,
+      "ssim": 0.9968,
+      "max_block_luma_shift": 3.99,
+      "pass": true
+    },
+    {
+      "frame_index": 214,
+      "time_seconds": 8.56,
+      "ssim": 0.9968,
+      "max_block_luma_shift": 3.99,
+      "pass": true
+    },
+    {
+      "frame_index": 215,
+      "time_seconds": 8.6,
+      "ssim": 0.9968,
+      "max_block_luma_shift": 3.99,
+      "pass": true
+    },
+    {
+      "frame_index": 216,
+      "time_seconds": 8.64,
+      "ssim": 0.9968,
+      "max_block_luma_shift": 3.99,
+      "pass": true
+    },
+    {
+      "frame_index": 217,
+      "time_seconds": 8.68,
+      "ssim": 0.9968,
+      "max_block_luma_shift": 3.99,
+      "pass": true
+    },
+    {
+      "frame_index": 218,
+      "time_seconds": 8.72,
+      "ssim": 0.9965,
+      "max_block_luma_shift": 4.03,
+      "pass": true
+    },
+    {
+      "frame_index": 219,
+      "time_seconds": 8.76,
+      "ssim": 0.9953,
+      "max_block_luma_shift": 13.63,
+      "pass": true
+    },
+    {
+      "frame_index": 220,
+      "time_seconds": 8.8,
+      "ssim": 0.9938,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 221,
+      "time_seconds": 8.84,
+      "ssim": 0.9912,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 222,
+      "time_seconds": 8.88,
+      "ssim": 0.9912,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 223,
+      "time_seconds": 8.92,
+      "ssim": 0.9912,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 224,
+      "time_seconds": 8.96,
+      "ssim": 0.9912,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 225,
+      "time_seconds": 9,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 226,
+      "time_seconds": 9.04,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 227,
+      "time_seconds": 9.08,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 228,
+      "time_seconds": 9.12,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 229,
+      "time_seconds": 9.16,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 230,
+      "time_seconds": 9.2,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 231,
+      "time_seconds": 9.24,
+      "ssim": 0.9911,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 232,
+      "time_seconds": 9.28,
+      "ssim": 0.991,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 233,
+      "time_seconds": 9.32,
+      "ssim": 0.991,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 234,
+      "time_seconds": 9.36,
+      "ssim": 0.991,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 235,
+      "time_seconds": 9.4,
+      "ssim": 0.991,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 236,
+      "time_seconds": 9.44,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 237,
+      "time_seconds": 9.48,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 238,
+      "time_seconds": 9.52,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 239,
+      "time_seconds": 9.56,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 240,
+      "time_seconds": 9.6,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 241,
+      "time_seconds": 9.64,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 242,
+      "time_seconds": 9.68,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 243,
+      "time_seconds": 9.72,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 244,
+      "time_seconds": 9.76,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 245,
+      "time_seconds": 9.8,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 246,
+      "time_seconds": 9.84,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 247,
+      "time_seconds": 9.88,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 248,
+      "time_seconds": 9.92,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 249,
+      "time_seconds": 9.96,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 250,
+      "time_seconds": 10,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 251,
+      "time_seconds": 10.04,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 252,
+      "time_seconds": 10.08,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 253,
+      "time_seconds": 10.12,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 254,
+      "time_seconds": 10.16,
+      "ssim": 0.9909,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 255,
+      "time_seconds": 10.2,
+      "ssim": 0.9908,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 256,
+      "time_seconds": 10.24,
+      "ssim": 0.9907,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 257,
+      "time_seconds": 10.28,
+      "ssim": 0.9905,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 258,
+      "time_seconds": 10.32,
+      "ssim": 0.9902,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 259,
+      "time_seconds": 10.36,
+      "ssim": 0.9902,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 260,
+      "time_seconds": 10.4,
+      "ssim": 0.9902,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 261,
+      "time_seconds": 10.44,
+      "ssim": 0.9902,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 262,
+      "time_seconds": 10.48,
+      "ssim": 0.9902,
+      "max_block_luma_shift": 8.44,
+      "pass": true
+    },
+    {
+      "frame_index": 263,
+      "time_seconds": 10.52,
+      "ssim": 0.9879,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 264,
+      "time_seconds": 10.56,
+      "ssim": 0.9879,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 265,
+      "time_seconds": 10.6,
+      "ssim": 0.9879,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 266,
+      "time_seconds": 10.64,
+      "ssim": 0.9879,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 267,
+      "time_seconds": 10.68,
+      "ssim": 0.9879,
+      "max_block_luma_shift": 9.28,
+      "pass": true
+    },
+    {
+      "frame_index": 268,
+      "time_seconds": 10.72,
+      "ssim": 0.988,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 269,
+      "time_seconds": 10.76,
+      "ssim": 0.9881,
+      "max_block_luma_shift": 9.28,
+      "pass": true
+    },
+    {
+      "frame_index": 270,
+      "time_seconds": 10.8,
+      "ssim": 0.988,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 271,
+      "time_seconds": 10.84,
+      "ssim": 0.9881,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 272,
+      "time_seconds": 10.88,
+      "ssim": 0.9882,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 273,
+      "time_seconds": 10.92,
+      "ssim": 0.9882,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 274,
+      "time_seconds": 10.96,
+      "ssim": 0.9883,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 275,
+      "time_seconds": 11,
+      "ssim": 0.9883,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 276,
+      "time_seconds": 11.04,
+      "ssim": 0.9884,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 277,
+      "time_seconds": 11.08,
+      "ssim": 0.9884,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 278,
+      "time_seconds": 11.12,
+      "ssim": 0.9884,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 279,
+      "time_seconds": 11.16,
+      "ssim": 0.9884,
+      "max_block_luma_shift": 9.26,
+      "pass": true
+    },
+    {
+      "frame_index": 280,
+      "time_seconds": 11.2,
+      "ssim": 0.9884,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 281,
+      "time_seconds": 11.24,
+      "ssim": 0.9885,
+      "max_block_luma_shift": 9.37,
+      "pass": true
+    },
+    {
+      "frame_index": 282,
+      "time_seconds": 11.28,
+      "ssim": 0.9885,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 283,
+      "time_seconds": 11.32,
+      "ssim": 0.9886,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 284,
+      "time_seconds": 11.36,
+      "ssim": 0.9886,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 285,
+      "time_seconds": 11.4,
+      "ssim": 0.9886,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 286,
+      "time_seconds": 11.44,
+      "ssim": 0.9886,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 287,
+      "time_seconds": 11.48,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 288,
+      "time_seconds": 11.52,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 289,
+      "time_seconds": 11.56,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 290,
+      "time_seconds": 11.6,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 291,
+      "time_seconds": 11.64,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 292,
+      "time_seconds": 11.68,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 293,
+      "time_seconds": 11.72,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 294,
+      "time_seconds": 11.76,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 295,
+      "time_seconds": 11.8,
+      "ssim": 0.9887,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 296,
+      "time_seconds": 11.84,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 297,
+      "time_seconds": 11.88,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 298,
+      "time_seconds": 11.92,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 299,
+      "time_seconds": 11.96,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 300,
+      "time_seconds": 12,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 301,
+      "time_seconds": 12.04,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 302,
+      "time_seconds": 12.08,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 303,
+      "time_seconds": 12.12,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 304,
+      "time_seconds": 12.16,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 305,
+      "time_seconds": 12.2,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 306,
+      "time_seconds": 12.24,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 307,
+      "time_seconds": 12.28,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 308,
+      "time_seconds": 12.32,
+      "ssim": 0.9888,
+      "max_block_luma_shift": 9.36,
+      "pass": true
+    },
+    {
+      "frame_index": 309,
+      "time_seconds": 12.36,
+      "ssim": 0.9889,
+      "max_block_luma_shift": 10.3,
+      "pass": true
+    },
+    {
+      "frame_index": 310,
+      "time_seconds": 12.4,
+      "ssim": 0.989,
+      "max_block_luma_shift": 10.3,
+      "pass": true
+    },
+    {
+      "frame_index": 311,
+      "time_seconds": 12.44,
+      "ssim": 0.989,
+      "max_block_luma_shift": 10.3,
+      "pass": true
+    },
+    {
+      "frame_index": 312,
+      "time_seconds": 12.48,
+      "ssim": 0.9889,
+      "max_block_luma_shift": 10.3,
+      "pass": true
+    },
+    {
+      "frame_index": 313,
+      "time_seconds": 12.52,
+      "ssim": 0.9891,
+      "max_block_luma_shift": 8.62,
+      "pass": true
+    },
+    {
+      "frame_index": 314,
+      "time_seconds": 12.56,
+      "ssim": 0.9891,
+      "max_block_luma_shift": 8.62,
+      "pass": true
+    },
+    {
+      "frame_index": 315,
+      "time_seconds": 12.6,
+      "ssim": 0.9891,
+      "max_block_luma_shift": 8.62,
+      "pass": true
+    },
+    {
+      "frame_index": 316,
+      "time_seconds": 12.64,
+      "ssim": 0.9891,
+      "max_block_luma_shift": 8.62,
+      "pass": true
+    },
+    {
+      "frame_index": 317,
+      "time_seconds": 12.68,
+      "ssim": 0.9891,
+      "max_block_luma_shift": 8.62,
+      "pass": true
+    },
+    {
+      "frame_index": 318,
+      "time_seconds": 12.72,
+      "ssim": 0.9891,
+      "max_block_luma_shift": 8.62,
+      "pass": true
+    }
+  ]
+}

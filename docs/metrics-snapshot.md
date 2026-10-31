@@ -172,6 +172,41 @@ Named report: `samples/voa10/localisation-manifest.json` (2026-10-31).
   outside_box_diff 0 on all three
 - Per-frame lane walls: 21.03 / 28.84 / 11.67 s (lane walls, not end-to-end)
 
+### Static-shot composite (video-rate sign, branch `feat/static-shot-gate`)
+
+Named reports: `samples/voa10/sign-shot-report.json` (Composited) and
+`samples/voa10/sign-shot-refused-report.json` (Refused), both 2026-10-31,
+captured by `trackdub-director sign-shot` over `media/demo/demo-dub.mp4`
+(1920x1080, 25 fps) with reference `frames/hero-0242.jpg` and the localised
+`frames/localised/hero-0242-cafeteria.png`, box (449,145)-(751,534).
+
+- Metric: luma SSIM over non-overlapping 8x8 blocks of the box region, each
+  frame vs the reference frame. Gate: block-mean SSIM >= 0.95 **and** largest
+  single-block mean-luma shift <= 30 levels (catches a small occlusion the
+  mean averages away).
+- Window 2.36-12.76 s: **260 frames checked (59-318), SSIM min 0.9879
+  (frame 263), mean 0.9936; largest block luma shift 13.63 (frame 219);
+  Composited, 260 frames, outside_box_diff max 0.**
+  Cross-check: ffmpeg's own `ssim` filter over the same crop gave min 0.988.
+- Rejected design, stated: a worst-single-block SSIM floor. On this unchanged
+  shot the worst block fell to 0.22 (letter edges of the sign, where a
+  sub-pixel shift between the JPEG reference and the h264 frames moves the
+  edge), so it would have refused a clean shot. The luma-shift limit was set
+  after measuring: 13.6 observed, 30 allowed. Limit of the metric: an
+  occluder close in brightness to what it covers can pass.
+- Window 2.32-12.76 s (one frame early): **Refused** at frame 58, SSIM
+  0.2847, largest block luma shift 214.21 (the previous shot); no output
+  file written.
+- **0 image calls**: the stage reuses the hero-0242 repaint (18,017 tokens,
+  counted under Visual localisation above). Covering the shot frame by frame
+  would have meant 260 image calls.
+- outside_box_diff is counted on decoded RGB before the h264 encode; the
+  output video is lossy everywhere, including outside the box.
+- Tests on the branch: `dotnet test --list-tests` **243 cases discovered**
+  (229 at freeze + 14); the full run executed **245 passed, 0 failed**, because
+  the invalid-box theory over `LocalisationBox` data is discovered as one case
+  and runs three rows.
+
 ### Transcription (muse-voice-transcribe-1.0)
 
 - voa10 prep (2026-10-30): 1 call; scale set (2026-10-31): 2 calls —
