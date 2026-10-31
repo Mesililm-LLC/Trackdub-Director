@@ -51,6 +51,30 @@ internal static class ApiHandlers
         }
     }
 
+    // MetaClient reads the reasoning effort from the process env at call time, so set it for this run and restore after.
+    internal static async Task<IResult> RunQaWithReasoningAsync(MetaClient client, QaOptions options, QaApiRequest req, string from, string to, CancellationToken ct)
+    {
+        string? prevReasoning = Environment.GetEnvironmentVariable(MetaAuth.ReasoningEffortEnv);
+        bool didSetReasoning = false;
+        if (options.ReasoningEffort is not null && !string.Equals(prevReasoning, options.ReasoningEffort, StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.SetEnvironmentVariable(MetaAuth.ReasoningEffortEnv, options.ReasoningEffort);
+            didSetReasoning = true;
+        }
+
+        try
+        {
+            return await RunQaAsync(client, options, req, from, to, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (didSetReasoning)
+            {
+                Environment.SetEnvironmentVariable(MetaAuth.ReasoningEffortEnv, prevReasoning);
+            }
+        }
+    }
+
     internal static async Task<IResult> RunQaAsync(MetaClient client, QaOptions options, QaApiRequest req, string from, string to, CancellationToken ct)
     {
         try

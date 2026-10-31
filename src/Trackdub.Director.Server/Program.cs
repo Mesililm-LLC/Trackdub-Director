@@ -36,16 +36,14 @@ var app = builder.Build();
 
 app.UseCors();
 
+// Default files are served only outside development. In dev, static files still work if wwwroot exists
+// (after a prod build), but Vite is primary.
 if (!app.Environment.IsDevelopment())
 {
     app.UseDefaultFiles();
-    app.UseStaticFiles();
 }
-else
-{
-    // In dev, static files still work if wwwroot exists (after a prod build), but Vite is primary.
-    app.UseStaticFiles();
-}
+
+app.UseStaticFiles();
 
 // --- API ---
 
@@ -131,26 +129,7 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
         return Results.BadRequest(new { error });
     }
 
-    // MetaClient reads the reasoning effort from the process env at call time, so set it for this run and restore after.
-    string? prevReasoning = Environment.GetEnvironmentVariable(MetaAuth.ReasoningEffortEnv);
-    bool didSetReasoning = false;
-    if (options.ReasoningEffort is not null && !string.Equals(prevReasoning, options.ReasoningEffort, StringComparison.OrdinalIgnoreCase))
-    {
-        Environment.SetEnvironmentVariable(MetaAuth.ReasoningEffortEnv, options.ReasoningEffort);
-        didSetReasoning = true;
-    }
-
-    try
-    {
-        return await ApiHandlers.RunQaAsync(client, options, req, from, to, ct).ConfigureAwait(false);
-    }
-    finally
-    {
-        if (didSetReasoning)
-        {
-            Environment.SetEnvironmentVariable(MetaAuth.ReasoningEffortEnv, prevReasoning);
-        }
-    }
+    return await ApiHandlers.RunQaWithReasoningAsync(client, options, req, from, to, ct).ConfigureAwait(false);
 });
 app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextService sceneService, CancellationToken ct) =>
 {
