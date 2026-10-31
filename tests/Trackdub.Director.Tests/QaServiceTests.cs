@@ -7,23 +7,20 @@ namespace Trackdub.Director.Tests;
 
 public sealed class QaServiceTests
 {
-    private static HttpResponseMessage JsonResponse(object payload, HttpStatusCode status = HttpStatusCode.OK)
-    {
-        string json = JsonSerializer.Serialize(payload);
-        return new HttpResponseMessage(status)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
-        };
-    }
+    private const string Model = "muse-spark-1.1";
+    private const int TranslationPrompt = 10;
+    private const int TranslationCompletion = 5;
+    private const int MeaningPrompt = 7;
+    private const int MeaningCompletion = 4;
 
-    private static HttpResponseMessage ChatResponse(string modelId, string content, int promptTokens, int completionTokens)
+    private static HttpResponseMessage ChatResponse(string content, int promptTokens, int completionTokens)
     {
         var payload = new
         {
             id = $"chatcmpl-test-{Guid.NewGuid():N}",
             @object = "chat.completion",
             created = 1234567890L,
-            model = modelId,
+            model = Model,
             choices = new[]
             {
                 new { index = 0, finish_reason = "stop", message = new { role = "assistant", content } },
@@ -35,74 +32,69 @@ public sealed class QaServiceTests
                 total_tokens = promptTokens + completionTokens,
             },
         };
-        return JsonResponse(payload);
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
+        };
     }
 
     /// <summary>
-    /// Handler that distinguishes translation vs meaning calls by the meaning marker in the request body.
-    /// Translation queue holds plain translation strings; meaning queue holds JSON strings for meaning check.
-    /// Optionally injects exception for meaning calls via meaningExceptions queue.
+    /// Scripted Meta endpoint. A request carrying <see cref="MeaningGate.MeaningMarker"/> is a meaning check;
+    /// any other request is a translation that dequeues <see cref="Translations"/>. Meaning calls are counted,
+    /// so tests can assert that the gate was skipped without relying on a thrown exception.
     /// </summary>
-    private static HttpMessageHandler DualHandler(
-        string modelId,
-        Queue<string> translations,
-        Queue<string> meaningJsons,
-        int transPrompt = 10,
-        int transComp = 5,
-        int meaningPrompt = 7,
-        int meaningComp = 4,
-        Queue<Exception>? meaningExceptions = null,
-        List<string>? capturedBodies = null,
-        Action<string>? inspectRevisionBody = null)
+    private sealed class ScriptedMeta
     {
-        return new DelegatingHandlerStub(async (request, cancellationToken) =>
+        private int _meaningCalls;
+
+        public Queue<string> Translations { get; init; } = new();
+
+        public Queue<string> MeaningJsons { get; init; } = new();
+
+        public Queue<Exception> MeaningExceptions { get; init; } = new();
+
+        public Action<string>? InspectRevisionBody { get; init; }
+
+        public int MeaningCalls => _meaningCalls;
+
+        public HttpMessageHandler ToHandler() => new DelegatingHandlerStub(async (request, ct) =>
         {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            capturedBodies?.Add(body);
+            string body = await ReadBodyAsync(request, ct);
             Assert.Contains("/chat/completions", request.RequestUri?.ToString() ?? string.Empty);
 
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
-                return MeaningResponse();
+                return NextMeaningResponse();
             }
 
             if (body.Contains("Revise", StringComparison.Ordinal))
             {
-                inspectRevisionBody?.Invoke(body);
+                InspectRevisionBody?.Invoke(body);
             }
 
-            if (translations.Count == 0)
+            if (Translations.Count == 0)
             {
                 throw new InvalidOperationException("No more canned translations queued.");
             }
 
-            return ChatResponse(modelId, translations.Dequeue(), transPrompt, transComp);
+            return ChatResponse(Translations.Dequeue(), TranslationPrompt, TranslationCompletion);
         });
 
-        HttpResponseMessage MeaningResponse()
+        private HttpResponseMessage NextMeaningResponse()
         {
-            if (meaningExceptions is { Count: > 0 })
+            Interlocked.Increment(ref _meaningCalls);
+            if (MeaningExceptions.Count > 0)
             {
-                throw meaningExceptions.Dequeue();
+                throw MeaningExceptions.Dequeue();
             }
 
-            if (meaningJsons.Count == 0)
+            if (MeaningJsons.Count == 0)
             {
                 throw new InvalidOperationException("No more canned meaning JSON queued.");
             }
 
-            return ChatResponse(modelId, meaningJsons.Dequeue(), meaningPrompt, meaningComp);
+            return ChatResponse(MeaningJsons.Dequeue(), MeaningPrompt, MeaningCompletion);
         }
-    }
-
-    private static HttpMessageHandler SequencedHandler(
-        string modelId,
-        Queue<string> translations,
-        int promptTokens = 10,
-        int completionTokens = 5)
-    {
-        // Legacy simple handler without meaning; used for pure timing tests where meaning never called
-        return DualHandler(modelId, translations, new Queue<string>(), transPrompt: promptTokens, transComp: completionTokens);
     }
 
     private sealed class DelegatingHandlerStub : HttpMessageHandler
@@ -142,7 +134,7 @@ public sealed class QaServiceTests
     private static IDisposable FakeAuth()
     {
         var a = EnvShim("META_API_KEY", "test-fake-key");
-        var b = EnvShim("META_MODEL", "muse-spark-1.1");
+        var b = EnvShim("META_MODEL", Model);
         var c = EnvShim("META_MODEL_API_BASE_URL", "https://api.meta.ai/v1");
         var d = EnvShim("META_REASONING_EFFORT", "low");
         return new Composite(a, b, c, d);
@@ -169,45 +161,87 @@ public sealed class QaServiceTests
     private static string MeaningFailJson(string[] issues, string explanation)
         => JsonSerializer.Serialize(new { verdict = "fail", issues, explanation });
 
+    private static async Task<string> ReadBodyAsync(HttpRequestMessage request, CancellationToken ct)
+        => request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+    private static string UserPrompt(string body)
+    {
+        using JsonDocument doc = JsonDocument.Parse(body);
+        return doc.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!;
+    }
+
+    private static async Task<QaReport> RunSegments(
+        HttpMessageHandler handler,
+        QaOptions options,
+        QaSegmentInput[] segments,
+        CancellationToken ct = default)
+    {
+        using var http = new HttpClient(handler);
+        using var client = new MetaClient(http);
+        return await new QaService(client, options).RunAsync(segments, "en", "es", ct);
+    }
+
+    private static IEnumerable<QaAttemptReport> AllAttempts(QaSegmentReport seg)
+        => new[] { seg.FirstAttempt }.Concat(seg.Revisions);
+
+    /// <summary>
+    /// An attempt that failed timing: meaning was never evaluated and carries no provenance.
+    /// </summary>
+    private static void AssertTimingOnlyFailure(QaAttemptReport a)
+    {
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Fail, MeaningVerdict.NotEvaluated), (a.Verdict, a.TimingVerdict, a.MeaningVerdict));
+        Assert.Equal((0, 0, 0), (a.MeaningPromptTokens, a.MeaningCompletionTokens, a.MeaningTotalTokens));
+        Assert.All(
+            new object?[] { a.MeaningIssues, a.MeaningModelId, a.MeaningPromptTemplateVersion, a.MeaningTimestampUtc, a.MeaningExplanation },
+            value => Assert.Null(value));
+    }
+
+    /// <summary>
+    /// A meaning check that ran and passed: the attempt records the gate's provenance.
+    /// </summary>
+    private static void AssertMeaningProvenance(QaAttemptReport a)
+    {
+        Assert.Equal((MeaningPrompt, MeaningCompletion, MeaningGate.PromptTemplateVersion, "api.meta.ai"), (a.MeaningPromptTokens, a.MeaningCompletionTokens, a.MeaningPromptTemplateVersion, a.MeaningEndpointHost));
+        Assert.False(string.IsNullOrWhiteSpace(a.MeaningModelId));
+        Assert.False(string.IsNullOrWhiteSpace(a.MeaningTimestampUtc));
+    }
+
+    private static void AssertMeaningTokensRecorded(QaAttemptReport first, QaAttemptReport second)
+    {
+        Assert.True(first.MeaningTotalTokens > 0);
+        Assert.True(second.MeaningTotalTokens > 0);
+    }
+
     [Fact]
     public async Task Line_passes_first_try()
     {
         using var _ = FakeAuth();
 
-        var q = new Queue<string>(["Hola."]);
-        var m = new Queue<string>([MeaningPassJson()]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", q, m));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-a", "Hello.", DurationSeconds: 4.2) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Hola."]),
+            MeaningJsons = new Queue<string>([MeaningPassJson()]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-a", "Hello.", DurationSeconds: 4.2)]);
 
         Assert.Single(report.Segments);
-        QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Pass, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Pass, seg.FirstAttempt.TimingVerdict);
-        Assert.Equal(MeaningVerdict.Pass, seg.FirstAttempt.MeaningVerdict);
-        Assert.Empty(seg.FirstAttempt.MeaningIssues ?? []);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
-        Assert.Empty(seg.Revisions);
-        Assert.Equal(1, report.Totals.TotalSegments);
-        Assert.Equal(1, report.Totals.FirstPassCount);
-        Assert.Equal(1, report.Totals.FinalPassCount);
-        Assert.Equal(0, report.Totals.TotalRevisions);
-        Assert.Equal("Hola.", seg.FirstAttempt.Translation);
-        Assert.Equal("Hola.", seg.FinalTranslation);
+        Assert.Equal((1, 1, 1, 0), (report.Totals.TotalSegments, report.Totals.FirstPassCount, report.Totals.FinalPassCount, report.Totals.TotalRevisions));
         Assert.True(report.Totals.TotalTokens > 0);
-        // TokenUsage sums translation + meaning
-        Assert.Equal(10 + 7, seg.TokenUsage.PromptTokens);
-        Assert.Equal(5 + 4, seg.TokenUsage.CompletionTokens);
-        // Per-attempt meaning tokens
-        Assert.Equal(7, seg.FirstAttempt.MeaningPromptTokens);
-        Assert.Equal(4, seg.FirstAttempt.MeaningCompletionTokens);
-        Assert.Equal(MeaningGate.PromptTemplateVersion, seg.FirstAttempt.MeaningPromptTemplateVersion);
-        Assert.False(string.IsNullOrWhiteSpace(seg.FirstAttempt.MeaningTimestampUtc));
-        Assert.Equal("api.meta.ai", seg.FirstAttempt.MeaningEndpointHost);
+
+        QaSegmentReport seg = report.Segments[0];
+        QaAttemptReport first = seg.FirstAttempt;
+        Assert.Equal((QaVerdict.Pass, QaVerdict.Pass, MeaningVerdict.Pass, QaVerdict.Pass), (first.Verdict, first.TimingVerdict, first.MeaningVerdict, seg.FinalVerdict));
+        Assert.Empty(first.MeaningIssues ?? []);
+        Assert.Empty(seg.Revisions);
+        AssertMeaningProvenance(first);
+
+        Assert.Equal(("Hola.", "Hola."), (first.Translation, seg.FinalTranslation));
+
+        // TokenUsage sums translation + meaning.
+        Assert.Equal((TranslationPrompt + MeaningPrompt, TranslationCompletion + MeaningCompletion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -215,37 +249,31 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var q = new Queue<string>([
-            "Esta es una traduccion muy larga que no cabe",
-            "Traduccion corta",
-        ]);
-        var m = new Queue<string>([MeaningPassJson("Short but faithful.")]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", q, m));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-b", "This is a long source line that will overrun", DurationSeconds: 1.0) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>([
+                "Esta es una traduccion muy larga que no cabe",
+                "Traduccion corta",
+            ]),
+            MeaningJsons = new Queue<string>([MeaningPassJson("Short but faithful.")]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-b", "This is a long source line that will overrun", DurationSeconds: 1.0)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.TimingVerdict);
-        // Timing fail: meaning not checked
-        Assert.Equal(MeaningVerdict.NotEvaluated, seg.FirstAttempt.MeaningVerdict);
-        Assert.Equal(0, seg.FirstAttempt.MeaningPromptTokens);
+        QaAttemptReport first = seg.FirstAttempt;
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Fail, MeaningVerdict.NotEvaluated), (first.Verdict, first.TimingVerdict, first.MeaningVerdict));
+        Assert.Equal(0, first.MeaningPromptTokens);
         Assert.Single(seg.Revisions);
-        Assert.Equal(QaVerdict.Pass, seg.Revisions[0].Verdict);
-        Assert.Equal(QaVerdict.Pass, seg.Revisions[0].TimingVerdict);
-        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[0].MeaningVerdict);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
-        Assert.Equal(0, report.Totals.FirstPassCount);
-        Assert.Equal(1, report.Totals.FinalPassCount);
-        Assert.Equal(1, report.Totals.TotalRevisions);
-        Assert.Equal("Traduccion corta", seg.FinalTranslation);
-        // Token usage: 2 translations (10+10 prompt, 5+5 comp) + 1 meaning (7+4)
-        Assert.Equal(20 + 7, seg.TokenUsage.PromptTokens);
-        Assert.Equal(10 + 4, seg.TokenUsage.CompletionTokens);
+
+        QaAttemptReport revision = seg.Revisions[0];
+        Assert.Equal((QaVerdict.Pass, QaVerdict.Pass, MeaningVerdict.Pass), (revision.Verdict, revision.TimingVerdict, revision.MeaningVerdict));
+        Assert.Equal((QaVerdict.Pass, 0, 1, 1, "Traduccion corta"), (seg.FinalVerdict, report.Totals.FirstPassCount, report.Totals.FinalPassCount, report.Totals.TotalRevisions, seg.FinalTranslation));
+
+        // Token usage: 2 translations (10+10 prompt, 5+5 comp) + 1 meaning (7+4).
+        Assert.Equal((20 + MeaningPrompt, 10 + MeaningCompletion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -253,40 +281,34 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var q = new Queue<string>([
-            "Traduccion larguisima imposible de acortar sin perder sentido",
-            "Traduccion larguisima",
-            "Traduccion larga",
-            "Texto largo",
-        ]);
-        // No meaning calls because timing never passes
-        var m = new Queue<string>();
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", q, m));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-c", "Hello world", DurationSeconds: 0.4) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        // No meaning calls because timing never passes.
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>([
+                "Traduccion larguisima imposible de acortar sin perder sentido",
+                "Traduccion larguisima",
+                "Traduccion larga",
+                "Texto largo",
+            ]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-c", "Hello world", DurationSeconds: 0.4)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.TimingVerdict);
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Fail), (seg.FirstAttempt.Verdict, seg.FirstAttempt.TimingVerdict));
         Assert.Equal(3, seg.Revisions.Length);
         foreach (QaAttemptReport rev in seg.Revisions)
         {
-            Assert.Equal(QaVerdict.Fail, rev.Verdict);
-            Assert.Equal(QaVerdict.Fail, rev.TimingVerdict);
+            Assert.Equal((QaVerdict.Fail, QaVerdict.Fail), (rev.Verdict, rev.TimingVerdict));
             Assert.Equal(0, rev.MeaningPromptTokens);
         }
 
-        Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
-        Assert.Equal(0, report.Totals.FinalPassCount);
-        Assert.Equal(3, report.Totals.TotalRevisions);
-        Assert.Equal("Texto largo", seg.FinalTranslation);
-        // 4 model calls (initial + 3 revisions), no meaning tokens
-        Assert.Equal(40, seg.TokenUsage.PromptTokens);
-        Assert.Equal(20, seg.TokenUsage.CompletionTokens);
+        Assert.Equal((QaVerdict.Fail, 0, 3, "Texto largo"), (seg.FinalVerdict, report.Totals.FinalPassCount, report.Totals.TotalRevisions, seg.FinalTranslation));
+
+        // 4 model calls (initial + 3 revisions), no meaning tokens.
+        Assert.Equal((40, 20), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -294,23 +316,20 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var q = new Queue<string>(["Hola", "Hi"]);
-        var m = new Queue<string>([MeaningPassJson()]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", q, m));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 2, ToleranceFraction = 0.0 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-d", "Hi", DurationSeconds: null) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Hola", "Hi"]),
+            MeaningJsons = new Queue<string>([MeaningPassJson()]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 2, ToleranceFraction = 0.0 },
+            [new QaSegmentInput("seg-d", "Hi", DurationSeconds: null)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.TimingVerdict);
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Fail), (seg.FirstAttempt.Verdict, seg.FirstAttempt.TimingVerdict));
         Assert.Single(seg.Revisions);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
-        Assert.Equal(QaVerdict.Pass, seg.Revisions[0].TimingVerdict);
-        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[0].MeaningVerdict);
+        Assert.Equal((QaVerdict.Pass, QaVerdict.Pass, MeaningVerdict.Pass), (seg.FinalVerdict, seg.Revisions[0].TimingVerdict, seg.Revisions[0].MeaningVerdict));
     }
 
     [Fact]
@@ -318,68 +337,50 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        // Window 1.4s at 15 cps => ~21 chars allowed with 10% => 23 chars (1.54s)
-        // Step1: long faithful fails timing (no meaning call)
-        // Step2: Una toma mas. (13c incl period? Actually "Una toma mas." 13c) fits but fails meaning
-        // Step3: Necesitamos otra toma. (22c) fits and passes meaning
-        var translations = new Queue<string>([
-            "Necesitamos una toma mas larga que no cabe para forzar revision porque es demasiado extensa",
-            "Una toma mas.",
-            "Necesitamos otra toma.",
-        ]);
-        var meanings = new Queue<string>([
-            MeaningFailJson(["dropped modality/subject 'Necesitamos' (need) — changes from obligation to simple assertion"], "Candidate omits the subject and modality 'we need', changing the intent."),
-            MeaningPassJson("Compact faithful paraphrase preserves meaning."),
-        ]);
-        var captured = new List<string>();
+        // Window 1.4s at 15 cps allows about 23 characters with 10% tolerance.
+        // Attempt 1: the long faithful line overruns, so meaning is not checked.
+        // Attempt 2: "Una toma mas." fits but drops the modality, so meaning fails.
+        // Attempt 3: "Necesitamos otra toma." fits and passes meaning.
         bool revisionContainedIssues = false;
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings, capturedBodies: captured,
-            inspectRevisionBody: body =>
-            {
-                if (body.Contains("Una toma mas.", StringComparison.Ordinal) || body.Contains("Necesitamos otra toma", StringComparison.Ordinal))
-                {
-                    // Second revision should contain previous meaning issues
-                    if (body.Contains("Necesitamos", StringComparison.Ordinal) && body.Contains("Material meaning issues to fix", StringComparison.Ordinal))
-                    {
-                        revisionContainedIssues = true;
-                    }
-                }
-            }));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-reg", "We need one more take.", DurationSeconds: 1.4) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>([
+                "Necesitamos una toma mas larga que no cabe para forzar revision porque es demasiado extensa",
+                "Una toma mas.",
+                "Necesitamos otra toma.",
+            ]),
+            MeaningJsons = new Queue<string>([
+                MeaningFailJson(["dropped modality/subject 'Necesitamos' (need) — changes from obligation to simple assertion"], "Candidate omits the subject and modality 'we need', changing the intent."),
+                MeaningPassJson("Compact faithful paraphrase preserves meaning."),
+            ]),
+            InspectRevisionBody = body => revisionContainedIssues |= body.Contains("Material meaning issues to fix", StringComparison.Ordinal)
+                && body.Contains("Necesitamos", StringComparison.Ordinal)
+                && (body.Contains("Una toma mas.", StringComparison.Ordinal) || body.Contains("Necesitamos otra toma", StringComparison.Ordinal)),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-reg", "We need one more take.", DurationSeconds: 1.4)]);
 
         QaSegmentReport seg = report.Segments[0];
-        // First attempt: timing fail, not evaluated
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.TimingVerdict);
-        Assert.Equal(MeaningVerdict.NotEvaluated, seg.FirstAttempt.MeaningVerdict);
-        Assert.Equal(0, seg.FirstAttempt.MeaningPromptTokens);
+        QaAttemptReport first = seg.FirstAttempt;
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Fail, MeaningVerdict.NotEvaluated), (first.Verdict, first.TimingVerdict, first.MeaningVerdict));
+        Assert.Equal((0, 0), (first.MeaningPromptTokens, first.MeaningTotalTokens));
         Assert.Equal(2, seg.Revisions.Length);
-        // Second attempt (first revision): timing pass, meaning fail -> combined fail
-        Assert.Equal(QaVerdict.Fail, seg.Revisions[0].Verdict);
-        Assert.Equal(QaVerdict.Pass, seg.Revisions[0].TimingVerdict);
-        Assert.Equal(MeaningVerdict.Fail, seg.Revisions[0].MeaningVerdict);
-        Assert.Contains(seg.Revisions[0].MeaningIssues ?? [], i => i.Contains("Necesitamos", StringComparison.Ordinal));
-        Assert.Equal(MeaningGate.PromptTemplateVersion, seg.Revisions[0].MeaningPromptTemplateVersion);
-        // Third attempt: both pass -> final pass
-        Assert.Equal(QaVerdict.Pass, seg.Revisions[1].Verdict);
-        Assert.Equal(QaVerdict.Pass, seg.Revisions[1].TimingVerdict);
-        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[1].MeaningVerdict);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
-        Assert.Equal("Necesitamos otra toma.", seg.FinalTranslation);
-        // Revision feedback was injected
+
+        QaAttemptReport unfaithful = seg.Revisions[0];
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Pass, MeaningVerdict.Fail), (unfaithful.Verdict, unfaithful.TimingVerdict, unfaithful.MeaningVerdict));
+        Assert.Contains(unfaithful.MeaningIssues ?? [], i => i.Contains("Necesitamos", StringComparison.Ordinal));
+        Assert.Equal(MeaningGate.PromptTemplateVersion, unfaithful.MeaningPromptTemplateVersion);
+
+        QaAttemptReport faithful = seg.Revisions[1];
+        Assert.Equal((QaVerdict.Pass, QaVerdict.Pass, MeaningVerdict.Pass), (faithful.Verdict, faithful.TimingVerdict, faithful.MeaningVerdict));
+        Assert.Equal((QaVerdict.Pass, "Necesitamos otra toma."), (seg.FinalVerdict, seg.FinalTranslation));
         Assert.True(revisionContainedIssues, "Second revision prompt should contain prior meaning issues");
-        // Timing-fail attempt had no meaning tokens; others did
-        Assert.Equal(0, seg.FirstAttempt.MeaningTotalTokens);
-        Assert.True(seg.Revisions[0].MeaningTotalTokens > 0);
-        Assert.True(seg.Revisions[1].MeaningTotalTokens > 0);
-        // Token totals: 3 translations (30 prompt, 15 comp) + 2 meanings (14 prompt, 8 comp) = 44 prompt, 23 comp
-        Assert.Equal(30 + 14, seg.TokenUsage.PromptTokens);
-        Assert.Equal(15 + 8, seg.TokenUsage.CompletionTokens);
+        AssertMeaningTokensRecorded(unfaithful, faithful);
+
+        // 3 translations (30 prompt, 15 comp) + 2 meanings (14 prompt, 8 comp).
+        Assert.Equal((30 + 2 * MeaningPrompt, 15 + 2 * MeaningCompletion), (seg.TokenUsage.PromptTokens, seg.TokenUsage.CompletionTokens));
     }
 
     [Fact]
@@ -387,49 +388,50 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var translations = new Queue<string>([
-            "Una toma mas.",
-            "Necesitamos una toma mas larga que no cabe en la ventana de tiempo",
-            "Otra toma.",
-            "Necesitamos otra toma.",
-        ]);
-        var meanings = new Queue<string>([
-            MeaningFailJson(["dropped modality"], "Need was lost."),
-            MeaningFailJson(["dropped subject"], "Subject was lost."),
-            MeaningPassJson(),
-        ]);
         var revisionPrompts = new List<string>();
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings,
-            inspectRevisionBody: body =>
-            {
-                using JsonDocument doc = JsonDocument.Parse(body);
-                revisionPrompts.Add(doc.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!);
-            }));
-        using var client = new MetaClient(http);
-        var svc = new QaService(client, new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 });
-
-        QaReport report = await svc.RunAsync([new QaSegmentInput("feedback", "We need one more take.", 1.4)], "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>([
+                "Una toma mas.",
+                "Necesitamos una toma mas larga que no cabe en la ventana de tiempo",
+                "Otra toma.",
+                "Necesitamos otra toma.",
+            ]),
+            MeaningJsons = new Queue<string>([
+                MeaningFailJson(["dropped modality"], "Need was lost."),
+                MeaningFailJson(["dropped subject"], "Subject was lost."),
+                MeaningPassJson(),
+            ]),
+            InspectRevisionBody = body => revisionPrompts.Add(UserPrompt(body)),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("feedback", "We need one more take.", 1.4)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(MeaningVerdict.Fail, seg.FirstAttempt.MeaningVerdict);
         Assert.Equal(3, seg.Revisions.Length);
-        Assert.Equal(MeaningVerdict.NotEvaluated, seg.Revisions[0].MeaningVerdict);
-        Assert.Equal(MeaningVerdict.Fail, seg.Revisions[1].MeaningVerdict);
-        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[2].MeaningVerdict);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
+        Assert.Equal(
+            (MeaningVerdict.Fail, MeaningVerdict.NotEvaluated, MeaningVerdict.Fail, MeaningVerdict.Pass, QaVerdict.Pass),
+            (seg.FirstAttempt.MeaningVerdict, seg.Revisions[0].MeaningVerdict, seg.Revisions[1].MeaningVerdict, seg.Revisions[2].MeaningVerdict, seg.FinalVerdict));
+
+        string[] requiredPhrases =
+        [
+            "Fix the listed meaning issues and restore lost meaning",
+            "without shortening further than necessary",
+            "restore the lost meaning",
+            $"at most {seg.FirstAttempt.MaxChars} characters",
+        ];
         Assert.Equal(3, revisionPrompts.Count);
         Assert.Contains("dropped modality", revisionPrompts[0], StringComparison.Ordinal);
         Assert.Contains("dropped modality", revisionPrompts[1], StringComparison.Ordinal);
-        Assert.Contains("dropped subject", revisionPrompts[2], StringComparison.Ordinal);
-        Assert.DoesNotContain("dropped modality", revisionPrompts[2], StringComparison.Ordinal);
-        Assert.All(revisionPrompts, prompt =>
-        {
-            Assert.Contains("Fix the listed meaning issues and restore lost meaning", prompt, StringComparison.Ordinal);
-            Assert.Contains("without shortening further than necessary", prompt, StringComparison.Ordinal);
-            Assert.Contains("restore the lost meaning", prompt, StringComparison.Ordinal);
-            Assert.Contains($"at most {seg.FirstAttempt.MaxChars} characters", prompt, StringComparison.Ordinal);
-            Assert.DoesNotContain("Rewrite it shorter", prompt, StringComparison.Ordinal);
-        });
+
+        string lastPrompt = revisionPrompts[2];
+        Assert.Contains("dropped subject", lastPrompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("dropped modality", lastPrompt, StringComparison.Ordinal);
+
+        Assert.All(revisionPrompts, prompt => Assert.All(requiredPhrases, phrase => Assert.Contains(phrase, prompt, StringComparison.Ordinal)));
+        Assert.All(revisionPrompts, prompt => Assert.DoesNotContain("Rewrite it shorter", prompt, StringComparison.Ordinal));
     }
 
     [Theory]
@@ -442,20 +444,23 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var translations = new Queue<string>(["Hola.", "Hola."]);
-        var meanings = new Queue<string>([raw, MeaningPassJson()]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings));
-        using var client = new MetaClient(http);
-        var svc = new QaService(client, new QaOptions { MaxAttempts = 1 });
-
-        QaReport report = await svc.RunAsync([new QaSegmentInput("invalid-root", "Hello.", 4.2)], "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Hola.", "Hola."]),
+            MeaningJsons = new Queue<string>([raw, MeaningPassJson()]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 1 },
+            [new QaSegmentInput("invalid-root", "Hello.", 4.2)]);
 
         QaSegmentReport seg = report.Segments[0];
         Assert.Equal(MeaningVerdict.Fail, seg.FirstAttempt.MeaningVerdict);
         Assert.Equal(new[] { "unparseable meaning response" }, seg.FirstAttempt.MeaningIssues);
         Assert.Single(seg.Revisions);
-        Assert.Equal(MeaningVerdict.Pass, seg.Revisions[0].MeaningVerdict);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
+
+        QaAttemptReport revision = seg.Revisions[0];
+        Assert.Equal((MeaningVerdict.Pass, QaVerdict.Pass), (revision.MeaningVerdict, seg.FinalVerdict));
     }
 
     [Theory]
@@ -467,12 +472,12 @@ public sealed class QaServiceTests
         using var _ = FakeAuth();
 
         string? userPrompt = null;
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", new Queue<string>(["Hola."]), new Queue<string>(),
-            inspectRevisionBody: body =>
-            {
-                using JsonDocument doc = JsonDocument.Parse(body);
-                userPrompt = doc.RootElement.GetProperty("messages")[1].GetProperty("content").GetString();
-            }));
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Hola."]),
+            InspectRevisionBody = body => userPrompt = UserPrompt(body),
+        };
+        using var http = new HttpClient(meaning.ToHandler());
         using var client = new MetaClient(http);
 
         await client.ReviseTranslationForTimingAsync(
@@ -480,10 +485,10 @@ public sealed class QaServiceTests
                 "Hello.", "Hola a todos.", "en", "es", 1.0, 15,
                 MeaningIssues: issue is null ? null : [issue]));
 
-        Assert.NotNull(userPrompt);
-        Assert.Contains("Rewrite it shorter, at most 15 characters, preserving meaning.", userPrompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("Material meaning issues", userPrompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("restore lost meaning", userPrompt, StringComparison.Ordinal);
+        string prompt = userPrompt ?? string.Empty;
+        Assert.Contains("Rewrite it shorter, at most 15 characters, preserving meaning.", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("Material meaning issues", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("restore lost meaning", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -491,35 +496,29 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var translations = new Queue<string>([
-            "Necesitamos una toma mas larga que no cabe para forzar revision porque es demasiado extensa",
-            "Una toma mas.",
-            "Una toma mas.",
-            "Una toma mas.",
-        ]);
-        var meanings = new Queue<string>([
-            MeaningFailJson(["dropped modality Necesitamos"], "Omits need."),
-            MeaningFailJson(["dropped modality Necesitamos"], "Still omits."),
-            MeaningFailJson(["dropped modality Necesitamos"], "Still omits."),
-        ]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 2, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-exh", "We need one more take.", DurationSeconds: 1.4) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>([
+                "Necesitamos una toma mas larga que no cabe para forzar revision porque es demasiado extensa",
+                "Una toma mas.",
+                "Una toma mas.",
+                "Una toma mas.",
+            ]),
+            MeaningJsons = new Queue<string>([
+                MeaningFailJson(["dropped modality Necesitamos"], "Omits need."),
+                MeaningFailJson(["dropped modality Necesitamos"], "Still omits."),
+                MeaningFailJson(["dropped modality Necesitamos"], "Still omits."),
+            ]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 2, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-exh", "We need one more take.", DurationSeconds: 1.4)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.TimingVerdict);
-        Assert.Equal(2, seg.Revisions.Length);
-        Assert.All(seg.Revisions, r =>
-        {
-            Assert.Equal(QaVerdict.Fail, r.Verdict);
-            Assert.Equal(MeaningVerdict.Fail, r.MeaningVerdict);
-        });
-        Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
-        Assert.Equal("Una toma mas.", seg.FinalTranslation);
+        Assert.Equal((QaVerdict.Fail, 2), (seg.FirstAttempt.TimingVerdict, seg.Revisions.Length));
+        Assert.All(seg.Revisions, r => Assert.Equal((QaVerdict.Fail, MeaningVerdict.Fail), (r.Verdict, r.MeaningVerdict)));
+        Assert.Equal((QaVerdict.Fail, "Una toma mas."), (seg.FinalVerdict, seg.FinalTranslation));
     }
 
     [Fact]
@@ -527,47 +526,23 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var translations = new Queue<string>([
-            "Larga traduccion que no cabe en la ventana de tiempo asignada por el director",
-            "Otra larga que tampoco cabe",
-        ]);
-        var meanings = new Queue<string>(); // should not be consumed
-        int meaningCalls = 0;
-        var handler = new DelegatingHandlerStub(async (request, ct) =>
+        // No meaning JSON is queued: a meaning call here would surface as an error and fail the counter check.
+        var meaning = new ScriptedMeta
         {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            bool isMeaning = body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal);
-            if (isMeaning)
-            {
-                meaningCalls++;
-            }
+            Translations = new Queue<string>([
+                "Larga traduccion que no cabe en la ventana de tiempo asignada por el director",
+                "Otra larga que tampoco cabe",
+            ]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 1, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-skip", "Hello", DurationSeconds: 0.4)]);
 
-            if (isMeaning)
-            {
-                if (meanings.Count == 0) throw new InvalidOperationException("Meaning should not be called on timing fail");
-                return ChatResponse("muse-spark-1.1", meanings.Dequeue(), 7, 4);
-            }
-
-            if (translations.Count == 0) throw new InvalidOperationException("No translations");
-            return ChatResponse("muse-spark-1.1", translations.Dequeue(), 10, 5);
-        });
-        using var http = new HttpClient(handler);
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 1, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-skip", "Hello", DurationSeconds: 0.4) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
-
-        Assert.Equal(0, meaningCalls);
-        Assert.Single(report.Segments[0].Revisions);
-        Assert.All(new[] { report.Segments[0].FirstAttempt }.Concat(report.Segments[0].Revisions), a =>
-        {
-            Assert.Equal(QaVerdict.Fail, a.Verdict);
-            Assert.Equal(0, a.MeaningPromptTokens);
-            Assert.Equal(MeaningVerdict.NotEvaluated, a.MeaningVerdict);
-            Assert.Null(a.MeaningIssues);
-        });
+        QaSegmentReport seg = report.Segments[0];
+        Assert.Equal(0, meaning.MeaningCalls);
+        Assert.Single(seg.Revisions);
+        Assert.All(AllAttempts(seg), AssertTimingOnlyFailure);
     }
 
     [Fact]
@@ -576,61 +551,29 @@ public sealed class QaServiceTests
         using var _ = FakeAuth();
 
         // Initial and every revision overrun a 1.0s window: meaning must never be called.
-        var translations = new Queue<string>([
-            "Traduccion inicial muchisimo mas larga que la ventana permitida de un segundo",
-            "Primera revision tambien demasiado larga para caber en la ventana de un segundo",
-            "Segunda revision igual de larga y por lo tanto sigue sin caber en la ventana",
-        ]);
-        int meaningCalls = 0;
-        var handler = new DelegatingHandlerStub(async (request, ct) =>
+        var meaning = new ScriptedMeta
         {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
-            {
-                meaningCalls++;
-                throw new InvalidOperationException("Meaning must not be called when timing fails.");
-            }
-
-            if (translations.Count == 0)
-            {
-                throw new InvalidOperationException("No more canned translations queued.");
-            }
-
-            return ChatResponse("muse-spark-1.1", translations.Dequeue(), 10, 5);
-        });
-
-        using var http = new HttpClient(handler);
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 2, ToleranceFraction = 0.0 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-not-eval", "Hello there.", DurationSeconds: 1.0) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+            Translations = new Queue<string>([
+                "Traduccion inicial muchisimo mas larga que la ventana permitida de un segundo",
+                "Primera revision tambien demasiado larga para caber en la ventana de un segundo",
+                "Segunda revision igual de larga y por lo tanto sigue sin caber en la ventana",
+            ]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 2, ToleranceFraction = 0.0 },
+            [new QaSegmentInput("seg-not-eval", "Hello there.", DurationSeconds: 1.0)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(0, meaningCalls);
+        Assert.Equal(0, meaning.MeaningCalls);
         Assert.Equal(2, seg.Revisions.Length);
         Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
 
-        var allAttempts = new[] { seg.FirstAttempt }.Concat(seg.Revisions).ToArray();
+        QaAttemptReport[] allAttempts = AllAttempts(seg).ToArray();
         Assert.Equal(3, allAttempts.Length);
-        foreach (QaAttemptReport a in allAttempts)
-        {
-            Assert.Equal(QaVerdict.Fail, a.TimingVerdict);
-            Assert.Equal(MeaningVerdict.NotEvaluated, a.MeaningVerdict);
-            // Combined verdict stays Fail
-            Assert.Equal(QaVerdict.Fail, a.Verdict);
-            // No meaning provenance or usage recorded
-            Assert.Equal(0, a.MeaningPromptTokens);
-            Assert.Equal(0, a.MeaningCompletionTokens);
-            Assert.Equal(0, a.MeaningTotalTokens);
-            Assert.Null(a.MeaningModelId);
-            Assert.Null(a.MeaningPromptTemplateVersion);
-            Assert.Null(a.MeaningTimestampUtc);
-            Assert.Null(a.MeaningExplanation);
-        }
+        Assert.All(allAttempts, AssertTimingOnlyFailure);
 
-        // NotEvaluated serializes as a distinct string in the report
+        // NotEvaluated serializes as a distinct string in the report.
         string json = JsonSerializer.Serialize(seg);
         Assert.Contains("\"NotEvaluated\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\"meaning_verdict\":\"Pass\"", json, StringComparison.Ordinal);
@@ -651,7 +594,7 @@ public sealed class QaServiceTests
         using var cts = new CancellationTokenSource();
         var handler = new DelegatingHandlerStub(async (request, ct) =>
         {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            string body = await ReadBodyAsync(request, ct);
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
                 // Cancellation arrives while the meaning check for segment 1 is in flight.
@@ -661,22 +604,16 @@ public sealed class QaServiceTests
             }
 
             Interlocked.Increment(ref translateCalls);
-            return ChatResponse("muse-spark-1.1", "Hola.", 10, 5);
+            return ChatResponse("Hola.", TranslationPrompt, TranslationCompletion);
         });
-
-        using var http = new HttpClient(handler);
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
 
         // Caller cancellation must surface, not be converted into a per-segment MeaningVerdict.Error
         // that lets the loop march on through the remaining segments.
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => svc.RunAsync(segs, "en", "es", cts.Token));
+            () => RunSegments(handler, new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 }, segs, cts.Token));
 
         // The loop stopped at segment 1: one translate plus one meaning call, no segment 2+ work.
-        Assert.Equal(1, translateCalls);
-        Assert.Equal(1, meaningCalls);
+        Assert.Equal((1, 1), (translateCalls, meaningCalls));
     }
 
     [Fact]
@@ -687,26 +624,21 @@ public sealed class QaServiceTests
         using var cts = new CancellationTokenSource();
         var handler = new DelegatingHandlerStub(async (request, ct) =>
         {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            string body = await ReadBodyAsync(request, ct);
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
             {
                 await cts.CancelAsync();
                 throw new TaskCanceledException("A task was canceled.");
             }
 
-            return ChatResponse("muse-spark-1.1", "Hola.", 10, 5);
+            return ChatResponse("Hola.", TranslationPrompt, TranslationCompletion);
         });
-
-        using var http = new HttpClient(handler);
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
 
         var segs = new[] { new QaSegmentInput("seg-cancel", "Hello.", DurationSeconds: 4.2) };
 
         // Cancelled while the meaning check is in flight: this is cancellation, not a meaning Error.
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => svc.RunAsync(segs, "en", "es", cts.Token));
+            () => RunSegments(handler, new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 }, segs, cts.Token));
     }
 
     [Fact]
@@ -714,23 +646,21 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var translations = new Queue<string>(["Hola."]);
-        var meaningExceptions = new Queue<Exception>([new HttpRequestException("transport timeout")]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, new Queue<string>(), meaningExceptions: meaningExceptions));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-err", "Hello.", DurationSeconds: 4.2) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Hola."]),
+            MeaningExceptions = new Queue<Exception>([new HttpRequestException("transport timeout")]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-err", "Hello.", DurationSeconds: 4.2)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Pass, seg.FirstAttempt.TimingVerdict);
-        Assert.Equal(MeaningVerdict.Error, seg.FirstAttempt.MeaningVerdict);
-        Assert.Contains("transport timeout", seg.FirstAttempt.MeaningExplanation ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        QaAttemptReport first = seg.FirstAttempt;
+        Assert.Equal((QaVerdict.Fail, QaVerdict.Pass, MeaningVerdict.Error, QaVerdict.Fail), (first.Verdict, first.TimingVerdict, first.MeaningVerdict, seg.FinalVerdict));
+        Assert.Contains("transport timeout", first.MeaningExplanation ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(seg.Revisions);
-        Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
     }
 
     [Fact]
@@ -741,39 +671,26 @@ public sealed class QaServiceTests
         // Initial translation overruns the 4.2s window (63c budget at 15cps), so timing fails and
         // the meaning check is skipped. Revision "Hola." fits, so meaning runs and the transport
         // failure is recorded as Error: combined Fail, terminal, no further revisions.
-        var translations = new Queue<string>([
-            "Traduccion larguisima que no cabe en la ventana asignada definitivamente",
-            "Hola.",
-        ]);
-        int meaningCalls = 0;
-        var handler = new DelegatingHandlerStub(async (request, ct) =>
+        var meaning = new ScriptedMeta
         {
-            string body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
-            {
-                meaningCalls++;
-                throw new HttpRequestException("API 502 bad gateway");
-            }
+            Translations = new Queue<string>([
+                "Traduccion larguisima que no cabe en la ventana asignada definitivamente",
+                "Hola.",
+            ]),
+            MeaningExceptions = new Queue<Exception>([new HttpRequestException("API 502 bad gateway")]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-err2", "Hello.", DurationSeconds: 4.2)]);
 
-            return ChatResponse("muse-spark-1.1", translations.Dequeue(), 10, 5);
-        });
-
-        using var http = new HttpClient(handler);
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-err2", "Hello.", DurationSeconds: 4.2) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
         QaSegmentReport seg = report.Segments[0];
-
-        // Meaning ran exactly once (the revision attempt); the timing-fail attempt skipped it.
-        Assert.Equal(1, meaningCalls);
+        Assert.Equal((1, QaVerdict.Fail), (meaning.MeaningCalls, seg.FinalVerdict));
         Assert.Single(seg.Revisions);
-        Assert.Equal(MeaningVerdict.NotEvaluated, seg.FirstAttempt.MeaningVerdict);
-        Assert.Equal(MeaningVerdict.Error, seg.Revisions[0].MeaningVerdict);
-        Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
-        Assert.Contains("502", seg.Revisions[0].MeaningExplanation ?? string.Empty, StringComparison.Ordinal);
+
+        QaAttemptReport revision = seg.Revisions[0];
+        Assert.Equal((MeaningVerdict.NotEvaluated, MeaningVerdict.Error), (seg.FirstAttempt.MeaningVerdict, revision.MeaningVerdict));
+        Assert.Contains("502", revision.MeaningExplanation ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -781,29 +698,24 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        // Initial passes both? No, meaning normalized to fail => combined fail => needs revision.
-        // So after normalization, firstAttempt is fail, then revision.
-        var translations = new Queue<string>(["Hola.", "Hola de nuevo."]);
-        // First meaning says pass with issues => normalized to fail; second meaning passes cleanly? But we have MaxAttempts=1 so revisions=1 and final fail? Actually if second passes, final pass.
-        // Make second meaning fail too so final fail deterministic.
-        var meanings = new Queue<string>([
-            JsonSerializer.Serialize(new { verdict = "pass", issues = new[] { "dropped subject" }, explanation = "Claims pass but lists issues" }),
-            JsonSerializer.Serialize(new { verdict = "fail", issues = new[] { "still off" }, explanation = "Still off." }),
-        ]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 1, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-norm", "Hello.", DurationSeconds: 4.2) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        // The first meaning reply says pass but lists issues, so it normalizes to fail and a revision runs.
+        // The revision's meaning also fails, so the final verdict is fail.
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Hola.", "Hola de nuevo."]),
+            MeaningJsons = new Queue<string>([
+                JsonSerializer.Serialize(new { verdict = "pass", issues = new[] { "dropped subject" }, explanation = "Claims pass but lists issues" }),
+                JsonSerializer.Serialize(new { verdict = "fail", issues = new[] { "still off" }, explanation = "Still off." }),
+            ]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 1, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-norm", "Hello.", DurationSeconds: 4.2)]);
 
         QaSegmentReport seg = report.Segments[0];
-        // First meaning normalized to fail
-        Assert.Equal(MeaningVerdict.Fail, seg.FirstAttempt.MeaningVerdict);
-        Assert.Equal(QaVerdict.Fail, seg.FirstAttempt.Verdict);
+        Assert.Equal((MeaningVerdict.Fail, QaVerdict.Fail), (seg.FirstAttempt.MeaningVerdict, seg.FirstAttempt.Verdict));
         Assert.Single(seg.Revisions);
-        // Second attempt also fails meaning, so final fail
         Assert.Equal(QaVerdict.Fail, seg.FinalVerdict);
     }
 
@@ -812,25 +724,22 @@ public sealed class QaServiceTests
     {
         using var _ = FakeAuth();
 
-        var translations = new Queue<string>(["Nos hace falta una toma mas."]);
-        var meanings = new Queue<string>([MeaningPassJson("Idiomatic but faithful paraphrase.")]);
-        using var http = new HttpClient(DualHandler("muse-spark-1.1", translations, meanings));
-        using var client = new MetaClient(http);
-        var opts = new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 };
-        var svc = new QaService(client, opts);
-
-        var segs = new[] { new QaSegmentInput("seg-idiom", "We need one more take.", DurationSeconds: 2.0) };
-        QaReport report = await svc.RunAsync(segs, "en", "es");
+        var meaning = new ScriptedMeta
+        {
+            Translations = new Queue<string>(["Nos hace falta una toma mas."]),
+            MeaningJsons = new Queue<string>([MeaningPassJson("Idiomatic but faithful paraphrase.")]),
+        };
+        QaReport report = await RunSegments(
+            meaning.ToHandler(),
+            new QaOptions { MaxAttempts = 3, ToleranceFraction = 0.10 },
+            [new QaSegmentInput("seg-idiom", "We need one more take.", DurationSeconds: 2.0)]);
 
         QaSegmentReport seg = report.Segments[0];
-        Assert.Equal(QaVerdict.Pass, seg.FirstAttempt.Verdict);
-        Assert.Equal(QaVerdict.Pass, seg.FirstAttempt.TimingVerdict);
-        Assert.Equal(MeaningVerdict.Pass, seg.FirstAttempt.MeaningVerdict);
+        QaAttemptReport first = seg.FirstAttempt;
+        Assert.Equal((QaVerdict.Pass, QaVerdict.Pass, MeaningVerdict.Pass), (first.Verdict, first.TimingVerdict, first.MeaningVerdict));
+        AssertMeaningProvenance(first);
         Assert.Empty(seg.Revisions);
-        Assert.Equal(QaVerdict.Pass, seg.FinalVerdict);
-        Assert.Equal("Nos hace falta una toma mas.", seg.FinalTranslation);
-        Assert.Equal(MeaningGate.PromptTemplateVersion, seg.FirstAttempt.MeaningPromptTemplateVersion);
-        Assert.False(string.IsNullOrWhiteSpace(seg.FirstAttempt.MeaningModelId));
+        Assert.Equal((QaVerdict.Pass, "Nos hace falta una toma mas."), (seg.FinalVerdict, seg.FinalTranslation));
     }
 
     private static bool HasRealApiKey
