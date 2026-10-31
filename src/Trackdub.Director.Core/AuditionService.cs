@@ -312,7 +312,6 @@ public sealed class AuditionService
             return work;
         }
 
-        run.MetaCalls++;
         MeaningCheckResult meaning;
         try
         {
@@ -322,6 +321,7 @@ public sealed class AuditionService
         }
         catch (MetaBudgetExhaustedException)
         {
+            // The budget refused the call before it was sent, so it is not counted.
             run.MetaCapHit = true;
             work.MeaningVerdict = MeaningVerdict.NotEvaluated;
             return work;
@@ -333,6 +333,7 @@ public sealed class AuditionService
             meaning = MeaningGate.ForError(ex.Message, attempt.ModelId, null, GetEndpointHost());
         }
 
+        run.MetaCalls++;
         run.MeaningTokens += meaning.Usage?.TotalTokens ?? 0;
         work.MeaningVerdict = meaning.Verdict;
         work.MeaningIssues = meaning.Issues;
@@ -425,16 +426,16 @@ public sealed class AuditionService
 
     /// <summary>
     /// File name for a winning take. Segment ids come from the request, so the stem keeps only
-    /// ASCII letters, digits, '-' and '_'. An id that had to change gets a short hash suffix, so
-    /// distinct ids cannot collapse onto one file.
+    /// ASCII letters, digits, '-' and '_'. An id that had to change, or that is too long for the
+    /// stem, gets a short hash suffix, so distinct ids cannot collapse onto one file.
     /// </summary>
     public static string TakeFileName(string segmentId, int takeNumber)
     {
-        string stem = new(segmentId
+        string sanitized = new(segmentId
             .Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '_')
-            .Take(MaxStemLength)
             .ToArray());
-        if (stem != segmentId)
+        string stem = new(sanitized.Take(MaxStemLength).ToArray());
+        if (sanitized != segmentId || sanitized.Length > MaxStemLength)
         {
             byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(segmentId));
             stem = $"{stem}-{Convert.ToHexString(digest, 0, 4).ToLowerInvariant()}";

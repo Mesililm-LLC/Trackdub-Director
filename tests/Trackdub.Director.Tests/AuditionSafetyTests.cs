@@ -53,6 +53,13 @@ public sealed class AuditionSafetyTests
     }
 
     [Fact]
+    public void TakeFileName_keeps_long_clean_ids_that_share_a_prefix_apart()
+    {
+        string prefix = new('a', 64);
+        Assert.NotEqual(AuditionService.TakeFileName(prefix + "x", 1), AuditionService.TakeFileName(prefix + "y", 1));
+    }
+
+    [Fact]
     public void CallBudget_refuses_requests_once_the_limit_is_reached()
     {
         var budget = new CallBudget(2);
