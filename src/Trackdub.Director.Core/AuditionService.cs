@@ -319,13 +319,14 @@ public sealed class AuditionService
             return work;
         }
 
-        run.MetaCalls++;
         MeaningCheckResult? meaning = await CheckMeaningAsync(segment, attempt, run, cancellationToken).ConfigureAwait(false);
         if (meaning is null)
         {
             return work;
         }
 
+        // Counted only once the call was sent: a budget refusal returned null above.
+        run.MetaCalls++;
         int tokens = meaning.Usage?.TotalTokens ?? 0;
         run.MeaningTokens += tokens;
         work.ApplyMeaning(meaning.Verdict, meaning.Issues, meaning.Explanation, tokens);
@@ -401,9 +402,11 @@ public sealed class AuditionService
             return "No cast voice for this speaker; not synthesized.";
         }
 
-        if (run.ElevenLabsCapHit || run.MetaCapHit)
+        // Only the ElevenLabs cap stops synthesis. The Meta cap limits new meaning checks, so takes that already
+        // passed the gate must still be synthesized.
+        if (run.ElevenLabsCapHit)
         {
-            return "Run cap already hit; synthesis stopped.";
+            return "ElevenLabs cap already hit; synthesis stopped.";
         }
 
         if (run.ElevenLabsCharacters + take.Attempt.Translation.Length > MaxElevenLabsCharacters)

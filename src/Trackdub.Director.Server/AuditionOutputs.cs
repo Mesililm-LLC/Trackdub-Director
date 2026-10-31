@@ -17,13 +17,21 @@ internal static class AuditionOutputs
 
         string auditionDir = Path.Combine(outputDir, "media", "audition");
         Directory.CreateDirectory(auditionDir);
-        foreach (AuditionSegmentReport segment in report.Segments)
+        List<(string FileName, byte[] Bytes)> winners = report.Segments
+            .Select(segment => (segment, winner: segment.Takes.FirstOrDefault(t => t.IsWinner)))
+            .Where(x => x.winner?.AudioBytes is not null && x.segment.WinnerFileName is not null)
+            .Select(x => (x.segment.WinnerFileName!, x.winner!.AudioBytes!))
+            .ToList();
+
+        // Check every name before writing any file, so a clash cannot overwrite a take that was already saved.
+        if (winners.Select(w => w.FileName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != winners.Count)
         {
-            AuditionTakeReport? winner = segment.Takes.FirstOrDefault(t => t.IsWinner);
-            if (winner?.AudioBytes is { } bytes && segment.WinnerFileName is not null)
-            {
-                await WriteWinnerAsync(auditionDir, segment.WinnerFileName, bytes, ct).ConfigureAwait(false);
-            }
+            throw new ArgumentException("Two winning takes map to the same file name.", nameof(report));
+        }
+
+        foreach ((string fileName, byte[] bytes) in winners)
+        {
+            await WriteWinnerAsync(auditionDir, fileName, bytes, ct).ConfigureAwait(false);
         }
 
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
