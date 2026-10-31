@@ -109,7 +109,7 @@ public sealed class AuditionService
 
     private static bool IsIncomplete(AuditionSegmentInput segment)
     {
-        return segment is null || string.IsNullOrWhiteSpace(segment.Id) || segment.Text is null;
+        return segment is null || string.IsNullOrWhiteSpace(segment.Id) || string.IsNullOrWhiteSpace(segment.Text);
     }
 
     private async Task<AuditionCastVoice[]> CastAsync(CancellationToken cancellationToken)
@@ -320,11 +320,7 @@ public sealed class AuditionService
 
         // QA deliberately skipped this text (estimated timing failed). The
         // audition gate still needs a verdict before any synthesis decision.
-        if (run.MetaCapHit)
-        {
-            return work;
-        }
-
+        // Only the budget decides whether the check runs; a refused call returns null below.
         MeaningCheckResult? meaning = await CheckMeaningAsync(segment, attempt, run, cancellationToken).ConfigureAwait(false);
         if (meaning is null)
         {

@@ -35,7 +35,7 @@ internal static class RequestValidation
 
     private static bool IsIncompleteAuditionSegment(AuditionSegmentInput segment)
     {
-        return segment is null || string.IsNullOrWhiteSpace(segment.Id) || segment.Text is null;
+        return segment is null || string.IsNullOrWhiteSpace(segment.Id) || string.IsNullOrWhiteSpace(segment.Text);
     }
 
     private sealed class SegmentRules<T>

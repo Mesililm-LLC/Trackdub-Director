@@ -21,6 +21,8 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    private static readonly TimeSpan BodyReadTimeout = TimeSpan.FromSeconds(120);
+
     private readonly HttpClient _httpClient;
     private readonly bool _ownsClient;
     private readonly string _modelId;
@@ -115,9 +117,20 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
 
         using (response)
         {
-            byte[] body = response.Content is null
-                ? []
-                : await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            byte[] body;
+            try
+            {
+                // HttpClient.Timeout ends once headers arrive under ResponseHeadersRead, so bound the body read here.
+                using var bodyTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                bodyTimeout.CancelAfter(BodyReadTimeout);
+                body = response.Content is null
+                    ? []
+                    : await response.Content.ReadAsByteArrayAsync(bodyTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TtsApiException("ElevenLabs response body read timed out.");
+            }
 
             if (!response.IsSuccessStatusCode)
             {

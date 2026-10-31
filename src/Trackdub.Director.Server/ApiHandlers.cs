@@ -7,6 +7,22 @@ using static RequestValidation;
 // Runs the QA and audition pipelines for their endpoints and maps failures to HTTP results.
 internal static class ApiHandlers
 {
+    // QA and audition set or read the process-wide reasoning effort and share the Meta call path, so their runs go one at a time.
+    private static readonly SemaphoreSlim MetaRunLock = new(1, 1);
+
+    internal static async Task<IResult> RunSerializedAsync(Func<Task<IResult>> run, CancellationToken ct)
+    {
+        await MetaRunLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await run().ConfigureAwait(false);
+        }
+        finally
+        {
+            MetaRunLock.Release();
+        }
+    }
+
     // Maps the upstream and input failures every endpoint shares to HTTP results.
     internal static async Task<IResult> GuardAsync(Func<Task<IResult>> work)
     {

@@ -91,6 +91,12 @@ public static class AudioDuration
         {
             string chunkId = Encoding.ASCII.GetString(wav, offset, 4);
             int chunkSize = BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(offset + 4, 4));
+            if (chunkSize < 0)
+            {
+                // A negative size would move the offset backwards and loop forever.
+                throw new InvalidOperationException("WAV chunk size is negative.");
+            }
+
             int payload = offset + 8;
             if (chunkId == "fmt " && payload + 12 <= wav.Length)
             {
@@ -126,5 +132,8 @@ public sealed class PcmFormat
 
     public int BytesPerFrame => Channels * (BitsPerSample / 8);
 
-    public bool IsValid => SampleRate > 0 && Channels > 0 && BitsPerSample > 0 && BitsPerSample % 8 == 0;
+    public bool IsValid =>
+        SampleRate > 0 && Channels > 0 && BitsPerSample > 0 && BitsPerSample % 8 == 0
+        && (long)Channels * (BitsPerSample / 8) <= int.MaxValue
+        && (long)SampleRate * ((long)Channels * (BitsPerSample / 8)) <= int.MaxValue;
 }

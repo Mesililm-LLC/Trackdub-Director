@@ -80,7 +80,7 @@ internal static class ApiEndpoints
             return Results.BadRequest(new { error });
         }
 
-        return await ApiHandlers.RunQaWithReasoningAsync(client, options, req, from, to, ct).ConfigureAwait(false);
+        return await ApiHandlers.RunSerializedAsync(() => ApiHandlers.RunQaWithReasoningAsync(client, options, req, from, to, ct), ct).ConfigureAwait(false);
     }
 
     internal static async Task<IResult> SceneContextAsync(HttpRequest request, SceneContextService sceneService, CancellationToken ct)
@@ -159,7 +159,7 @@ internal static class ApiEndpoints
             return Results.BadRequest(new { error = validationError });
         }
 
-        return await ApiHandlers.RunAuditionAsync(client, tts, req, ct).ConfigureAwait(false);
+        return await ApiHandlers.RunSerializedAsync(() => ApiHandlers.RunAuditionAsync(client, tts, req, ct), ct).ConfigureAwait(false);
     }
 
     // SPA fallback: for non-/api routes, serve index.html if it exists (after a prod build).
