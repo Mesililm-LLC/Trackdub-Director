@@ -18,7 +18,8 @@ builder.Services.AddTransient<TranslationService>(sp => new TranslationService(s
 builder.Services.AddTransient<SceneContextService>(sp => new SceneContextService(sp.GetRequiredService<MetaClient>()));
 // One provider for the process: it owns a 120-second client sized for audio synthesis.
 builder.Services.AddSingleton<ITtsProvider>(_ => new ElevenLabsTtsProvider());
-builder.Services.AddTransient<VisualLocalisationService>(_ => new VisualLocalisationService());
+builder.Services.AddSingleton<MetaMuseImageClient>(sp => new MetaMuseImageClient(sp.GetRequiredService<HttpClient>()));
+builder.Services.AddTransient<VisualLocalisationService>(sp => new VisualLocalisationService(sp.GetRequiredService<MetaMuseImageClient>()));
 
 // JSON: keep defaults but ensure case-insensitive reads and respect JsonPropertyName attributes
 builder.Services.ConfigureHttpJsonOptions(opts =>
