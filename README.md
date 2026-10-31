@@ -1,44 +1,59 @@
 # Trackdub Director
 
-Standalone open-source app built for the Meta AI Developer Hackathon (Oct 26 - Nov 4, 2026). All code in this repo was written during the event. C# Core engine, ASP.NET Core host, React frontend.
+**A dubbing workbench that can say no, and shows its work.** AI dubbing fails
+quietly: a translated line runs long, drops the subject, or a sign in the shot
+stays in English, and nothing downstream checks. Trackdub Director puts
+verification gates between every stage and records a verdict, with provenance
+and token cost, for every line and frame. Built on the Meta Model API for the
+Meta AI Developer Hackathon (Oct 26 - Nov 4, 2026).
 
-## What is pre-existing
+## What was built during the event
 
-- **Trackdub** — the author's prior project ([github.com/mesalimllc/Trackdub](https://github.com/mesalimllc/Trackdub)). It predates this hackathon and is not part of this submission.
+**All code, data files, and measurements in this repository were created
+during the hackathon (Oct 26 - Nov 4, 2026)**, apart from the pre-existing
+material listed at the end of this section. This is a standalone app. It does not import, copy, or call
+the author's earlier project Trackdub
+([github.com/mesalimllc/Trackdub](https://github.com/mesalimllc/Trackdub)),
+which predates the event and is not part of this submission. Pre-existing
+material used here: VOA Learning English footage (public domain) and
+ElevenLabs stock voices.
 
-## What this app is
+| Lane | What it does | Meta model |
+|---|---|---|
+| Translate + timing gate | Translates each line, estimates spoken length against the original window, bounces failures back to the model to revise (up to 3 attempts) | `muse-spark-1.1` |
+| Meaning gate | Judges whether the translation still says what the source said; skipped (`NotEvaluated`, zero tokens) when timing already failed | `muse-spark-1.1` |
+| Scene context | Grounds concept phrases (for example the shop sign) in each line's frame; a vision pass reads on-screen text and tone | `sam-3.1`, vision model (`META_VISION_MODEL`) |
+| Director adaptation | Uses scene context to request a register change; the adapted line must pass both gates again | `muse-spark-1.1` |
+| Audition | Synthesizes takes and measures the real audio against the window; never forces a winner | ElevenLabs TTS (the Meta catalog has no TTS endpoint) |
+| Visual localisation | Repaints a crop of the sign and composites only the box back; pixels outside the box are machine-checked against the source | `muse-image-1.0` |
+| Static-shot gate | Extends one sign repaint across a whole shot, only if every frame's sign region still matches the repainted frame | none (reuses the one repaint) |
 
-A local dubbing workbench: a translation lane with provenance and metering, a deterministic QA/timing loop that bounces failures back to the model for revision, and a web UI to run both and inspect results — all backed by the Meta Model API (`muse-spark-1.1` via `https://api.meta.ai/v1`).
+`muse-voice-transcribe-1.0` was used during dataset preparation (3 calls,
+recorded in `docs/metrics-snapshot.md`); it is not called by the app.
 
-## Status
+## Measured results (VOA Lesson 10 coffee-shop segment)
 
-Day 3 (Oct 26): QA and timing loop on top of the translation lane. `muse-spark-1.1`
-via `https://api.meta.ai/v1`. Raw probe found reasoning overhead: each
-translation returned `usage.completion_tokens_details.reasoning_tokens` (about
-85% of completion tokens) with no reasoning content in the message body. The
-API accepts `reasoning_effort=low|medium|high` (tested live); wiring
-`reasoning_effort: low` halves completion tokens. Sample batch
-`samples/segments.json` carries `duration_seconds` per segment; deterministic
-duration estimator (`chars / CPS`) checks each translation against its window,
-bouncing failures back to the model with "preserve meaning, fit X seconds, at
-most N chars" and re-checking up to 3 attempts. See QA / timing loop below.
+Every figure comes from a report file in this repo; method in
+`docs/metrics-definitions.md`, snapshot in `docs/metrics-snapshot.md`.
 
-Day 4 (Oct 26): Local web app. ASP.NET Core host exposes Core
-over HTTP; React + TypeScript frontend. `src/Trackdub.Director.Server` serves
-the UI and the API from one process; `web/` is the Vite app.
-
-Director Mode Stage A (scene context, read-only): `SceneContextService`
-segments caller-supplied concept phrases in a per-segment frame via
-`sam-3.1` on `POST /v1/responses` (live-probed: `/chat/completions` rejects
-that model, a generic instruction returns empty text, and a concept phrase
-returns `output_text` box/mask tokens such as
-`<|box;x1=10;y1=10;x2=29;y2=49;w=64;h=64|><|mask;x=0;y=0;data=...|>`).
-Each segment gets a `DirectorContext` (speaker, emotion/tone, on-screen text,
-scene summary, regions) in which every field is nullable: SAM evidences only
-`regions`, speaker passes through only when caller-known, and the rest stay
-null. Malformed output is `Failed` with no defaulted context. Exposed
-read-only at `POST /api/scene-context` and as a `Scene:` outcome alongside
-Timing/Meaning in the web UI (`Run Scene`).
+- **Timing loop:** 83% of lines fit their window on the first translation,
+  100% after bounce-back revisions (voa10, 6 lines, 2 revisions).
+- **Measured audio:** the audition lane rejected a take that measured 2.46 s
+  against a 2.2 s window and cast the 2.32 s take; in another run it refused
+  to cast a line whose only take ran 1.39 s against a 1.32 s ceiling.
+- **Meaning gate:** 0 catches in 12 evaluated candidates on this material.
+  It ran and cost tokens on every one; it found nothing to stop here.
+- **Sign localisation:** 3 of 3 frames repainted COFFEE SHOP to CAFETERÍA
+  with an outside-box pixel difference of 0.
+- **Video-rate sign:** the static-shot gate checked all 260 frames of the
+  10.4 s sign shot: box mean SSIM 0.9864 or higher (threshold 0.95) and no
+  8x8 block brighter or darker by more than 13.6 luma levels (limit 30). It
+  composited one repaint across the shot, outside-box difference 0 on every
+  frame (`samples/voa10/sign-shot-report.json`). Starting the window one
+  frame early takes in the previous shot (box SSIM 0.28), and the gate
+  refuses and writes no video (`samples/voa10/sign-shot-refused-report.json`).
+- **Tests:** 246 .NET test cases discovered (248 executed; one theory over
+  record-typed data is discovered as a single case) and 11 web tests.
 
 ## Adoption
 
@@ -54,23 +69,24 @@ wherever the audition is described.
 
 ```
 Trackdub.Director.slnx
-src/Trackdub.Director.Core/      Class library: MetaAuth (env-only auth),
-                                  MetaClient (POST /chat/completions + GET /models
-                                  against https://api.meta.ai/v1), TranslationService,
-                                  DurationEstimator, QaService/QaOptions, QaModels.
+src/Trackdub.Director.Core/      Class library: MetaAuth (env-only auth), MetaClient
+                                  (https://api.meta.ai/v1), TranslationService, QaService +
+                                  DurationEstimator (timing gate), MeaningGate,
+                                  SceneContextService (sam-3.1 + vision pass),
+                                  DirectorAdaptationService, AuditionService (ElevenLabs TTS,
+                                  measured audio), VisualLocalisationService (muse-image-1.0),
+                                  StaticShotCompositor (static-shot gate).
                                   No third-party packages; HttpClient + System.Text.Json only.
                                   API keys are never read from files and never logged.
-src/Trackdub.Director.Server/    ASP.NET Core minimal API referencing Core.
-                                  GET /api/status, GET /api/models,
-                                  POST /api/translate, POST /api/qa, POST /api/scene-context.
-                                  Serves web/dist output from wwwroot in production;
+src/Trackdub.Director.Server/    ASP.NET Core minimal API referencing Core (see Server API).
+                                  Serves the prebuilt web UI from wwwroot;
                                   no key required to start; key only gates live endpoints.
-src/Trackdub.Director.Cli/       Console app (trackdub-director): smoke / translate / models / qa.
+src/Trackdub.Director.Cli/       Console app (trackdub-director):
+                                  smoke / translate / models / qa / sign-shot.
 web/                             React + Vite + TypeScript frontend. One screen:
-                                  header (app name, key status, model, QA summary),
-                                  line list (source, translation, window vs estimate,
-                                  verdict, attempt count, expandable attempts),
-                                  Run Translate / Run QA, file picker (sample loaded by default).
+                                  header (key status, model, QA summary), line list with
+                                  per-line verdicts and expandable attempts, and Run Translate /
+                                  QA / Scene / Director / Audition / Visual.
                                   Dev proxy: Vite forwards /api to :5103.
 tests/Trackdub.Director.Tests/   xUnit. Live tests skipped without key; fake-handler
                                   estimator/QA tests; server endpoint tests (WebApplicationFactory).
@@ -253,6 +269,10 @@ working; a final pass rate below 100% means at least one line was reported as
 | GET | `/api/models` | key | Account models (proxies `GET /models`) |
 | POST | `/api/translate` | key | `{ segments, sourceLanguage?, targetLanguage? }` → `TranslationBatchOutput` |
 | POST | `/api/qa` | key | `{ segments, sourceLanguage?, targetLanguage?, options? }` → `QaReport` (same JSON as CLI report) |
+| POST | `/api/scene-context` | key | Per-segment frames + concept phrases → `DirectorContext` per segment (sam-3.1 regions, vision fields) |
+| POST | `/api/director-adaptation` | key | Register adaptation from scene context; adapted lines re-run both gates |
+| POST | `/api/audition` | key + `ELEVENLABS_API_KEY` | Synthesizes takes, measures audio against each window, casts or refuses per line |
+| POST | `/api/visual-localisation` | key | Frame + box + source/target text → localised frame with `outside_box_diff` |
 
 `POST` bodies accept `segments` as `[{ id, text, duration_seconds? }]` plus
 optional `sourceLanguage`/`source_language`/`from` and
@@ -281,15 +301,50 @@ Frontend: one Vitest smoke test rendering the line list from a mocked API respon
 Trackdub.Director.slnx
 src/Trackdub.Director.Core/    Class library: Meta Model API client, translation, duration estimator, QA loop
 src/Trackdub.Director.Server/  ASP.NET Core host exposing Core over HTTP + serving the built frontend from wwwroot
-src/Trackdub.Director.Cli/     Console app: smoke / translate / models / qa subcommands
+src/Trackdub.Director.Cli/     Console app: smoke / translate / models / qa / sign-shot subcommands
 web/                           React + Vite + TypeScript frontend (one screen)
 tests/Trackdub.Director.Tests/ xUnit tests + server endpoint tests
 samples/segments.json           8-line sample input with duration_seconds for the qa command
+samples/voa10/                 VOA Lesson 10 coffee-shop dataset: segments, frames, manifests, reports
+docs/                          Metrics definitions and snapshot, demo asset spec, judging criteria
 .env.example                   Placeholder config - no real keys
 global.json                    Pins .NET 10 SDK
 ```
 
+## Sign shot (video-rate sign localisation)
+
+One Muse Image repaint can stand in for a whole shot only when the sign
+region stays the same during it. `sign-shot` checks that before compositing:
+every frame in the window must keep its box region at or above a mean luma
+SSIM threshold (default 0.95) against the frame that was repainted, and no
+8x8 block may shift its mean brightness by more than 30 levels, so a small
+occlusion that the mean would average away still fails. An occluder close in
+brightness to what it covers can pass; that is a limit of the metric. If any
+frame fails, nothing is written. Needs `ffmpeg` and `ffprobe` on PATH (or
+`--ffmpeg`/`--ffprobe`); frames move as raw RGB over pipes.
+
+```bash
+dotnet run --project src/Trackdub.Director.Cli -- sign-shot   --video clip.mp4 --reference samples/voa10/frames/hero-0242.jpg   --localised samples/voa10/frames/localised/hero-0242-cafeteria.png   --box 449,145,751,534 --start 2.36 --end 12.76   --output clip-localised.mp4 --report sign-shot-report.json
+```
+
+Exit code 0 means composited (or passed, when `--output` is omitted), 2
+means refused. The report records per-frame SSIM and largest block shift, the first failing frame,
+and the largest outside-box pixel difference, counted on decoded frames
+before the lossy h264 encode.
+
 ## Honest history
 
-- Day 1-3: Core, translation lane, QA/timing loop, CLI harness — pushed to main.
-- Day 4: Local web app — `Trackdub.Director.Server` (thin HTTP wrapper over Core) and `web/` (single-screen Vite app; proxies `/api` in dev, builds into `wwwroot` for single-command runs). No Tauri/Avalonia, no Core behavior changes.
+All dates are 2026; every commit is in this repository's history.
+
+- Oct 26: Core and Meta Model API smoke test, translation lane with
+  provenance and usage, QA/timing loop with `reasoning_effort` control,
+  local web app (server plus React frontend).
+- Oct 28: Meaning gate after the timing check. Director Stage A: scene
+  context via `sam-3.1`. Demo asset spec and metrics definitions.
+- Oct 29: Stage B1 vision enrichment, Stage B2 register adaptation with gate
+  re-verification, CI for .NET and web.
+- Oct 30: VOA Lesson 10 dataset. Audition lane: voice casting with measured,
+  gated multi-take selection.
+- Oct 31: Visual localisation (crop-edit-composite with `muse-image-1.0`),
+  audition alternates and speed variant, uniform-config scale reports,
+  prebuilt web bundle, static-shot gate for video-rate sign localisation.
