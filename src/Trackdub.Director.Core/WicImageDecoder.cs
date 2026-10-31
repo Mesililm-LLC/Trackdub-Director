@@ -137,7 +137,8 @@ public static class WicImageDecoder
             return 1;
         }
 
-        throw new InvalidOperationException($"Unsupported decoded pixel format {format}.");
+        throw new InvalidOperationException(
+            $"Unsupported decoded pixel format {format}; supported: 24bpp RGB/BGR, 32bpp RGBA/BGRA (straight or premultiplied), 8bpp gray. Indexed (1/2/4/8bpp) and 16-bit formats are not converted.");
     }
 
     private static byte[] ToRgb24(byte[] raw, Guid format)
