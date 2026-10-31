@@ -30,7 +30,7 @@ internal static class MeaningEvalCli
             IReadOnlyList<MeaningEvalCase> cases = await MeaningEvalService.LoadCasesAsync(options.Input).ConfigureAwait(false);
             using var client = new MetaClient();
             MeaningEvalReport report = await new MeaningEvalService(client).RunAsync(cases, options.From, options.To).ConfigureAwait(false);
-            await File.WriteAllTextAsync(options.Output, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
+            await WriteReportAsync(options.Output, report).ConfigureAwait(false);
             PrintSummary(report.Summary);
             Console.WriteLine($"Report written to {options.Output}");
             return 0;
@@ -42,15 +42,23 @@ internal static class MeaningEvalCli
         }
     }
 
+    /// <summary>
+    /// Writes the report to a sibling temp file, then moves it over the output,
+    /// so an interrupted write never replaces a previous complete report.
+    /// </summary>
+    private static async Task WriteReportAsync(string output, MeaningEvalReport report)
+    {
+        string temp = output + ".tmp";
+        await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
+        File.Move(temp, output, overwrite: true);
+    }
+
     private static Options? Parse(string[] args, out string? error)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["--from"] = "en", ["--to"] = "es" };
-        string[] known = ["--input", "--output", "--from", "--to"];
         for (int i = 0; i < args.Length; i += 2)
         {
-            error = !known.Contains(args[i]) ? $"Unexpected argument '{args[i]}' for 'meaning-eval'."
-                : i + 1 >= args.Length ? $"Missing value for '{args[i]}'."
-                : null;
+            error = ValidatePair(args, i);
             if (error is not null)
             {
                 return null;
@@ -62,6 +70,16 @@ internal static class MeaningEvalCli
         string? missing = new[] { "--input", "--output" }.FirstOrDefault(k => !values.ContainsKey(k));
         error = missing is null ? null : $"{missing} is required.";
         return missing is null ? new Options(values["--input"], values["--output"], values["--from"], values["--to"]) : null;
+    }
+
+    /// <summary>Checks the flag at <paramref name="i"/> is known and followed by a non-blank value that is not itself a flag.</summary>
+    private static string? ValidatePair(string[] args, int i)
+    {
+        string[] known = ["--input", "--output", "--from", "--to"];
+        string? value = i + 1 < args.Length ? args[i + 1] : null;
+        return !known.Contains(args[i]) ? $"Unexpected argument '{args[i]}' for 'meaning-eval'."
+            : string.IsNullOrWhiteSpace(value) || value.StartsWith("--", StringComparison.Ordinal) ? $"Missing value for '{args[i]}'."
+            : null;
     }
 
     private static void PrintSummary(MeaningEvalSummary s)

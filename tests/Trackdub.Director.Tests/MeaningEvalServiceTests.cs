@@ -105,6 +105,7 @@ public sealed class MeaningEvalServiceTests
     [InlineData("[{\"id\":\"x\",\"source_text\":\"Hi\",\"candidate\":\"\",\"expected\":\"Pass\"}]", "needs id, source_text, and candidate")]
     [InlineData("[{\"id\":\"x\",\"source_text\":\"Hi\",\"candidate\":\"Hola\",\"expected\":\"Error\"}]", "must expect Pass or Fail")]
     [InlineData("not json", "Invalid meaning-eval cases JSON")]
+    [InlineData("[null]", "entry 0 is null")]
     public async Task LoadRejectsMalformedCaseFiles(string json, string message)
     {
         string path = Path.Combine(Path.GetTempPath(), $"meaning-eval-{Guid.NewGuid():N}.json");

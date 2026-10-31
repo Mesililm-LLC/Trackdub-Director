@@ -123,7 +123,7 @@ Visual: metrics snapshot scrolling (test snapshot, per-lane totals),
 then the end card.
 
 Voiceover:
-"Honest numbers: 258 automated tests. On these clips at their real
+"Honest numbers: 259 automated tests. On these clips at their real
 timing, the meaning gate caught nothing. Squeeze the timing to 70 percent
 and it stopped two lines that would have shipped with their meaning
 changed. On forty labeled cases it caught all twenty-four planted errors

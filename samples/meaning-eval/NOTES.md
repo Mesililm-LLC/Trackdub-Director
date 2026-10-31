@@ -25,7 +25,8 @@ dotnet run --project src/Trackdub.Director.Cli -- qa \
 40 labeled cases written for this eval: 16 clean Spanish translations and 24
 with one planted defect each (`error_type` names it, `note` says what changed).
 Clean cases deliberately include idiomatic and register changes the gate must
-allow. `seeded-14` and `seeded-15` are real compressions from the pressure run.
+allow. `seeded-14` is a real compression from the pressure run. `seeded-15` is
+that run's failed `Gracias todos` attempt, edited to `Gracias a todos.`.
 
 ```bash
 dotnet run --project src/Trackdub.Director.Cli -- meaning-eval \

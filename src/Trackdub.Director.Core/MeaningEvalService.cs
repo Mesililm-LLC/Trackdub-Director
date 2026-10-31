@@ -109,6 +109,12 @@ public sealed class MeaningEvalService
             return "at least one case is required.";
         }
 
+        int nullIndex = Array.IndexOf(cases, null);
+        if (nullIndex >= 0)
+        {
+            return $"entry {nullIndex} is null.";
+        }
+
         MeaningEvalCase? incomplete = cases.FirstOrDefault(c => string.IsNullOrWhiteSpace(c.Id) || string.IsNullOrWhiteSpace(c.SourceText) || string.IsNullOrWhiteSpace(c.Candidate));
         if (incomplete is not null)
         {

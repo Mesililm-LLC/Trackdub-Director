@@ -115,8 +115,10 @@ same `CheckMeaningAsync` call the QA loop makes, one call per case.
 - Limits, stated: the set was written for this eval (by Claude, labels by
   construction), the defects are clear-cut, and 40 cases is small. A perfect
   score here is a floor check that the gate sees material errors, not an
-  estimate of its accuracy on subtle or borderline changes. Two seeded cases
-  are the real compressions from the pressure run above.
+  estimate of its accuracy on subtle or borderline changes. `seeded-14`
+  ("¿Rodamos mañana?") is a real compression from the pressure run above;
+  `seeded-15` is that run's failed "Gracias todos" attempt, edited to
+  "Gracias a todos." so the case tests the dropped reason, not the grammar.
 - Tokens: **24,440** across **40** Meta calls.
 
 ## Token usage and call counts per lane (re-added from the named reports)

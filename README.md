@@ -66,7 +66,7 @@ Every figure comes from a report file in this repo; method in
   frame (`samples/voa10/sign-shot-report.json`). Starting the window one
   frame early takes in the previous shot (box SSIM 0.28), and the gate
   refuses and writes no video (`samples/voa10/sign-shot-refused-report.json`).
-- **Tests:** 258 .NET test cases discovered (260 executed; one theory over
+- **Tests:** 259 .NET test cases discovered (261 executed; one theory over
   record-typed data is discovered as a single case) and 11 web tests.
 
 ## Adoption
