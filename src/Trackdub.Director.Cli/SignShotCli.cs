@@ -87,12 +87,12 @@ internal static class SignShotCli
     /// <summary>The outcome when no composite should be written (refused, or measure-only); null means composite.</summary>
     private static GateOutcome? Decide(StaticShotFrame[] frames, Options options)
     {
-        StaticShotFrame? failure = StaticShotCompositor.FirstFailure(frames);
         if (frames.Length == 0)
         {
             return Refused("No video frames fall inside the window.");
         }
 
+        StaticShotFrame? failure = StaticShotCompositor.FirstFailure(frames);
         if (failure is not null)
         {
             return Refused($"Frame {failure.FrameIndex} (t={failure.TimeSeconds:0.000}s) box SSIM {failure.Ssim:0.0000} (largest block luma shift {failure.MaxBlockLumaShift:0.0}) fails the {options.MinSsim:0.00} mean SSIM / {StaticShotCompositor.MaxBlockLumaShift:0} luma-shift gate: the sign region changed, so one repaint cannot stand in for this shot.");

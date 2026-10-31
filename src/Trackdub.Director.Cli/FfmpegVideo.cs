@@ -70,7 +70,7 @@ internal sealed class FfmpegVideo
         return new FfmpegVideo(tools, path, VideoStream.Parse(csv));
     }
 
-    /// <summary>Decodes every frame as RGB24, reusing one buffer per frame.</summary>
+    /// <summary>Decodes every frame as RGB24. Each frame is a fresh array, so callers may keep it.</summary>
     public IEnumerable<(int Index, byte[] Rgb)> ReadFrames()
     {
         using Process process = Start(new ToolCommand(_tools.Ffmpeg, ["-v", "error", "-i", _path, "-map", "0:v:0", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]));
@@ -80,7 +80,7 @@ internal sealed class FfmpegVideo
         int index = 0;
         while (ReadFull(stdout, buffer))
         {
-            yield return (index++, buffer);
+            yield return (index++, (byte[])buffer.Clone());
         }
 
         process.WaitForExit();
@@ -102,17 +102,25 @@ internal sealed class FfmpegVideo
             "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "copy", "-shortest",
             output,
         ], RedirectInput: true));
-        return new Encoder(process);
+        return new Encoder(process, new FileInfo(output));
     }
 
+    /// <summary>
+    /// Encoder process. If it is disposed before <see cref="Finish"/> (an
+    /// exception mid-composite), ffmpeg is killed and the partial output is
+    /// deleted rather than closed out into a truncated video.
+    /// </summary>
     internal sealed class Encoder : IDisposable
     {
         private readonly Process _process;
+        private readonly FileInfo _output;
         private readonly Task<string> _stderr;
+        private bool _finished;
 
-        public Encoder(Process process)
+        public Encoder(Process process, FileInfo output)
         {
             _process = process;
+            _output = output;
             _stderr = process.StandardError.ReadToEndAsync();
         }
 
@@ -123,10 +131,38 @@ internal sealed class FfmpegVideo
             _process.StandardInput.BaseStream.Flush();
             _process.StandardInput.Close();
             _process.WaitForExit();
+            _finished = true;
             ThrowIfFailed(_process, _stderr);
         }
 
-        public void Dispose() => _process.Dispose();
+        public void Dispose()
+        {
+            if (!_finished)
+            {
+                Abandon();
+            }
+
+            _process.Dispose();
+        }
+
+        private void Abandon()
+        {
+            try
+            {
+                _process.Kill(entireProcessTree: true);
+                _process.WaitForExit();
+            }
+            catch (InvalidOperationException)
+            {
+                // The process already exited.
+            }
+
+            _output.Refresh();
+            if (_output.Exists)
+            {
+                _output.Delete();
+            }
+        }
     }
 
     private bool ReadFull(Stream stream, byte[] buffer)
