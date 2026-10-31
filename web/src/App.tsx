@@ -550,6 +550,18 @@ function AuditionTakeRow({ take }: { take: AuditionTake }) {
   );
 }
 
+function AuditionBudgetNotice({ totals }: { totals: AuditionReport["totals"] }) {
+  const stops = [
+    totals.meta_cap_hit && "Meta call budget reached",
+    totals.elevenlabs_cap_hit && "ElevenLabs character cap reached",
+  ].filter(Boolean);
+  if (stops.length === 0) {
+    return null;
+  }
+
+  return <div className="token-usage" role="status">Audition stopped early: {stops.join("; ")}. Remaining takes were not evaluated or synthesized.</div>;
+}
+
 function AuditionPanel({ seg, audition }: { seg: SegmentInput; audition: AuditionSegmentReport }) {
   return (
     <div className="attempts-panel" aria-label={`Audition for ${seg.id}`}>
@@ -1060,6 +1072,7 @@ export default function App() {
           onDirector={actions.runDirector}
           onAudition={actions.runAudition}
         />
+        {reports.audition && <AuditionBudgetNotice totals={reports.audition.totals} />}
         <LineList
           segments={input.segments}
           qaById={reports.qaById}
