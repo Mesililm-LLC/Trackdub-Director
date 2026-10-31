@@ -472,7 +472,8 @@ public sealed class AuditionService
     /// <summary>
     /// File name for a winning take. Segment ids come from the request, so the stem keeps only
     /// ASCII letters, digits, '-' and '_'. An id that had to change, or that is too long for the
-    /// stem, gets a short hash suffix, so distinct ids cannot collapse onto one file.
+    /// stem, gets a hash suffix after a '.', which a clean id can never contain. A hashed name
+    /// therefore never equals a clean one, and the 64-bit hash keeps distinct ids apart.
     /// </summary>
     public static string TakeFileName(string segmentId, int takeNumber)
     {
@@ -483,7 +484,7 @@ public sealed class AuditionService
         if (sanitized != segmentId || sanitized.Length > MaxStemLength)
         {
             byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(segmentId));
-            stem = $"{stem}-{Convert.ToHexString(digest, 0, 4).ToLowerInvariant()}";
+            stem = $"{stem}.{Convert.ToHexString(digest, 0, 8).ToLowerInvariant()}";
         }
 
         return $"{stem}-take{takeNumber}.wav";

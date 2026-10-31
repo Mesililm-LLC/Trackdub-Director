@@ -60,6 +60,16 @@ public sealed class AuditionSafetyTests
     }
 
     [Fact]
+    public void TakeFileName_never_gives_a_clean_id_the_name_of_a_sanitized_one()
+    {
+        // The clean id spelled with the hashed name's '.' replaced by '-' must not collide with it.
+        string hashed = AuditionService.TakeFileName("a/b", 1);
+        string clean = hashed[..^"-take1.wav".Length].Replace('.', '-');
+
+        Assert.NotEqual(hashed, AuditionService.TakeFileName(clean, 1));
+    }
+
+    [Fact]
     public void CallBudget_refuses_requests_once_the_limit_is_reached()
     {
         var budget = new CallBudget(2);
