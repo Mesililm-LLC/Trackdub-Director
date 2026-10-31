@@ -38,7 +38,8 @@ public sealed class DirectorAdaptationServiceTests
 
             if (body.Contains(DirectorAdaptationService.DirectorMarker, StringComparison.Ordinal))
             {
-                return AdaptationResponse(body);
+                AdaptationBodies.Add(body);
+                return AdaptationResponse();
             }
 
             if (body.Contains(MeaningGate.MeaningMarker, StringComparison.Ordinal))
@@ -49,16 +50,15 @@ public sealed class DirectorAdaptationServiceTests
             throw new InvalidOperationException($"Unexpected request body: {body}");
         }
 
-        private HttpResponseMessage AdaptationResponse(string body)
+        private HttpResponseMessage AdaptationResponse()
         {
             AdaptationCalls++;
-            AdaptationBodies.Add(body);
             if (AdaptationTransportsError)
             {
                 return UpstreamError();
             }
 
-            return ChatOk(AdaptationContent, promptTokens: 120, completionTokens: 40, reasoningTokens: 12, finishReason: AdaptationFinishReason);
+            return ChatOk(new ChatReply(AdaptationContent, 120, 40, 12, AdaptationFinishReason));
         }
 
         private HttpResponseMessage MeaningResponse()
@@ -69,7 +69,7 @@ public sealed class DirectorAdaptationServiceTests
                 return UpstreamError();
             }
 
-            return ChatOk(MeaningContent, promptTokens: 90, completionTokens: 30, reasoningTokens: null);
+            return ChatOk(new ChatReply(MeaningContent, 90, 30, null, "stop"));
         }
 
         private static HttpResponseMessage UpstreamError() => new(HttpStatusCode.InternalServerError)
@@ -78,8 +78,11 @@ public sealed class DirectorAdaptationServiceTests
         };
     }
 
-    private static HttpResponseMessage ChatOk(string content, int promptTokens, int completionTokens, int? reasoningTokens, string finishReason = "stop")
+    private sealed record ChatReply(string Content, int PromptTokens, int CompletionTokens, int? ReasoningTokens, string FinishReason);
+
+    private static HttpResponseMessage ChatOk(ChatReply reply)
     {
+        (string content, int promptTokens, int completionTokens, int? reasoningTokens, string finishReason) = reply;
         var payload = new
         {
             id = "chatcmpl-test-director",
@@ -110,21 +113,26 @@ public sealed class DirectorAdaptationServiceTests
             => _stub.HandleAsync(request, cancellationToken);
     }
 
-    private sealed record EnvSetting(string Key, string Value);
-
-    private static IDisposable EnvShim(EnvSetting setting)
+    private sealed class EnvScope : IDisposable
     {
-        string? previous = Environment.GetEnvironmentVariable(setting.Key);
-        Environment.SetEnvironmentVariable(setting.Key, setting.Value);
-        return new Restore(setting, previous);
-    }
+        private readonly Dictionary<string, string?> _previous = new(StringComparer.Ordinal);
 
-    private sealed class Restore : IDisposable
-    {
-        private readonly EnvSetting _setting;
-        private readonly string? _previous;
-        public Restore(EnvSetting setting, string? previous) { _setting = setting; _previous = previous; }
-        public void Dispose() => Environment.SetEnvironmentVariable(_setting.Key, _previous);
+        public EnvScope(IReadOnlyDictionary<string, string> values)
+        {
+            foreach (KeyValuePair<string, string> entry in values)
+            {
+                _previous[entry.Key] = Environment.GetEnvironmentVariable(entry.Key);
+                Environment.SetEnvironmentVariable(entry.Key, entry.Value);
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (KeyValuePair<string, string?> entry in _previous)
+            {
+                Environment.SetEnvironmentVariable(entry.Key, entry.Value);
+            }
+        }
     }
 
     private sealed class Composite : IDisposable
@@ -136,9 +144,11 @@ public sealed class DirectorAdaptationServiceTests
 
     private static IDisposable FakeAuth()
     {
-        return new Composite(
-            EnvShim(new EnvSetting("META_API_KEY", "test-fake-key")),
-            EnvShim(new EnvSetting("META_MODEL_API_BASE_URL", "https://api.meta.ai/v1")));
+        return new EnvScope(new Dictionary<string, string>
+        {
+            ["META_API_KEY"] = "test-fake-key",
+            ["META_MODEL_API_BASE_URL"] = "https://api.meta.ai/v1",
+        });
     }
 
     private static (DirectorAdaptationService Service, IDisposable Scope) BuildService(LaneStub stub)
@@ -466,11 +476,14 @@ public sealed class DirectorAdaptationServiceTests
         }
     }
 
+    public enum TransportFailure { Adaptation, Meaning }
+
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task TransportError_FailsTheSegmentAsTerminal(bool adaptationFails)
+    [InlineData(TransportFailure.Adaptation)]
+    [InlineData(TransportFailure.Meaning)]
+    public async Task TransportError_FailsTheSegmentAsTerminal(TransportFailure failure)
     {
+        bool adaptationFails = failure == TransportFailure.Adaptation;
         var stub = adaptationFails
             ? new LaneStub { AdaptationTransportsError = true }
             : new LaneStub { MeaningTransportsError = true };
