@@ -39,7 +39,7 @@ internal static class AuditionOutputs
         string target = Path.GetFullPath(Path.Combine(auditionDir, fileName));
         if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Winning take file name resolves outside the audition directory.");
+            throw new ArgumentException("Winning take file name resolves outside the audition directory.", nameof(fileName));
         }
 
         await File.WriteAllBytesAsync(target, bytes, ct).ConfigureAwait(false);
