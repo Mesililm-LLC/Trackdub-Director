@@ -32,6 +32,7 @@ public sealed class MetaClient : IDisposable
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsClient;
+    private readonly CallBudget? _budget;
 
     public MetaClient(HttpClient? httpClient = null)
     {
@@ -45,6 +46,22 @@ public sealed class MetaClient : IDisposable
             _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
             _ownsClient = true;
         }
+    }
+
+    private MetaClient(MetaClient parent, CallBudget budget)
+    {
+        _httpClient = parent._httpClient;
+        _ownsClient = false;
+        _budget = budget;
+    }
+
+    /// <summary>
+    /// Returns a client that shares this connection and charges every request it sends to <paramref name="budget"/>.
+    /// </summary>
+    public MetaClient WithBudget(CallBudget budget)
+    {
+        ArgumentNullException.ThrowIfNull(budget);
+        return new MetaClient(this, budget);
     }
 
     public async Task<string> ChatCompletionAsync(ChatRequest request, CancellationToken cancellationToken = default)
@@ -397,6 +414,9 @@ public sealed class MetaClient : IDisposable
 
     private async Task<string> SendForBodyAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Check cancellation first, so a cancelled call does not use up a budget reservation.
+        cancellationToken.ThrowIfCancellationRequested();
+        _budget?.Reserve();
         HttpResponseMessage response;
         try
         {

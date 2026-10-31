@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchStatus,
+  postAudition,
   postDirectorAdaptation,
   postQa,
   postSceneContext,
@@ -8,6 +9,13 @@ import {
   type DirectorAdaptationBatch,
   type DirectorAdaptationInput,
   type DirectorAdaptationSegmentResult,
+  type DirectorMeaningResult,
+  type TranslationProvenance,
+  type VisionProvenance,
+  type VisionUsage,
+  type AuditionReport,
+  type AuditionSegmentReport,
+  type AuditionTake,
   type DirectorContext,
   type QaAttempt,
   type QaReport,
@@ -25,7 +33,7 @@ import sampleSegments from "./sampleSegments.json";
 const DEFAULT_FROM = "en";
 const DEFAULT_TO = "es";
 
-type BusyState = "translate" | "qa" | "scene" | "director" | null;
+type BusyState = "translate" | "qa" | "scene" | "director" | "audition" | null;
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
@@ -41,6 +49,14 @@ function verdictClass(verdict: string): string {
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+function orDash(value: string | null | undefined): string {
+  return value ?? "—";
+}
+
+function listOrDash(values: string[] | null | undefined): string {
+  return values?.length ? values.join(" | ") : "—";
 }
 
 function parseSegments(text: string): SegmentInput[] {
@@ -60,6 +76,7 @@ function parseSegments(text: string): SegmentInput[] {
 
 interface LineCardProps {
   director: DirectorAdaptationSegmentResult | undefined;
+  audition: AuditionSegmentReport | undefined;
   seg: SegmentInput;
   q: QaSegmentReport | undefined;
   translated: string | null;
@@ -286,19 +303,16 @@ function RegionRow({ region, index }: { region: SceneRegion; index: number }) {
 }
 
 function SceneHeader({ context }: { context: DirectorContext | undefined }) {
+  const fields: Partial<DirectorContext> = context ?? {};
   return (
     <>
       <div className="token-usage">
-        Speaker: {context?.speaker_label ?? context?.speaker_id ?? "—"} · Emotion/tone: {context?.emotion_tone_label ?? "—"}
+        Speaker: {orDash(fields.speaker_label ?? fields.speaker_id)} · Emotion/tone: {orDash(fields.emotion_tone_label)}
       </div>
-      <div className="token-usage">Speaker description: {context?.speaker_description ?? "—"}</div>
-      <div className="token-usage">
-        On-screen text: {context?.on_screen_text?.length ? context.on_screen_text.join(" | ") : "—"}
-      </div>
-      <div className="token-usage">
-        Burned-in text: {context?.burned_in_text?.length ? context.burned_in_text.join(" | ") : "—"}
-      </div>
-      <div className="token-usage">Scene summary: {context?.scene_summary ?? "—"}</div>
+      <div className="token-usage">Speaker description: {orDash(fields.speaker_description)}</div>
+      <div className="token-usage">On-screen text: {listOrDash(fields.on_screen_text)}</div>
+      <div className="token-usage">Burned-in text: {listOrDash(fields.burned_in_text)}</div>
+      <div className="token-usage">Scene summary: {orDash(fields.scene_summary)}</div>
     </>
   );
 }
@@ -331,28 +345,41 @@ function SceneDetails({ scene }: { scene: SceneSegmentResult }) {
   );
 }
 
+function hasFrameInfo(scene: SceneSegmentResult): boolean {
+  return Boolean(scene.frame_id || scene.timecode_seconds != null || scene.frame_sha256);
+}
+
+function VisionGateLine({ provenance, usage }: { provenance: VisionProvenance; usage: VisionUsage | undefined }) {
+  const reasoning = usage?.reasoning_tokens;
+  return (
+    <div className="token-usage">
+      Vision gate: requested {provenance.requested_model_id} · returned {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
+      {usage?.total_tokens ?? "—"}
+      {reasoning != null ? ` (reasoning ${reasoning})` : ""}
+    </div>
+  );
+}
+
+function FrameLine({ scene }: { scene: SceneSegmentResult }) {
+  return (
+    <div className="token-usage" title={scene.frame_sha256 ?? ""}>
+      Frame: {orDash(scene.frame_id)} · {scene.timecode_seconds != null ? `${scene.timecode_seconds}s` : "—"} · sha256{" "}
+      {scene.frame_sha256 ? `${scene.frame_sha256.slice(0, 12)}…` : "—"}
+    </div>
+  );
+}
+
 function SceneVisionFooter({ scene }: { scene: SceneSegmentResult }) {
   const provenance = scene.vision_provenance;
-  const hasFrame = Boolean(scene.frame_id || scene.timecode_seconds != null || scene.frame_sha256);
+  const hasFrame = hasFrameInfo(scene);
   if (!provenance && !hasFrame) {
     return null;
   }
 
   return (
     <>
-      {provenance && (
-        <div className="token-usage">
-          Vision gate: requested {provenance.requested_model_id} · returned {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
-          {scene.vision_usage?.total_tokens ?? "—"}
-          {scene.vision_usage?.reasoning_tokens != null ? ` (reasoning ${scene.vision_usage.reasoning_tokens})` : ""}
-        </div>
-      )}
-      {hasFrame && (
-        <div className="token-usage" title={scene.frame_sha256 ?? ""}>
-          Frame: {scene.frame_id ?? "—"} · {scene.timecode_seconds != null ? `${scene.timecode_seconds}s` : "—"} · sha256{" "}
-          {scene.frame_sha256 ? `${scene.frame_sha256.slice(0, 12)}…` : "—"}
-        </div>
-      )}
+      {provenance && <VisionGateLine provenance={provenance} usage={scene.vision_usage} />}
+      {hasFrame && <FrameLine scene={scene} />}
     </>
   );
 }
@@ -440,17 +467,50 @@ function DirectorSideBySide({ director }: { director: DirectorAdaptationSegmentR
   );
 }
 
+function isQuietMeaning(meaning: DirectorMeaningResult): boolean {
+  return meaning.issues.length === 0 && meaning.verdict === "Pass";
+}
+
 function DirectorMeaningIssues({ director }: { director: DirectorAdaptationSegmentResult }) {
   const meaning = director.meaning;
-  if (!meaning || (meaning.issues.length === 0 && meaning.verdict === "Pass")) {
+  if (!meaning || isQuietMeaning(meaning)) {
     return null;
   }
 
+  const hasIssues = meaning.issues.length > 0;
   return (
     <div className="meaning-issues">
-      <strong>meaning{meaning.issues.length > 0 ? " issues:" : ":"}</strong>{" "}
-      {meaning.issues.length > 0 ? meaning.issues.join("; ") : meaning.explanation}
-      {meaning.issues.length > 0 && meaning.explanation ? ` — ${meaning.explanation}` : ""}
+      <strong>meaning{hasIssues ? " issues:" : ":"}</strong>{" "}
+      {hasIssues ? meaning.issues.join("; ") : meaning.explanation}
+      {hasIssues && meaning.explanation ? ` — ${meaning.explanation}` : ""}
+    </div>
+  );
+}
+
+function DirectorErrorLine({ error }: { error: string }) {
+  return (
+    <div className="meaning-issues">
+      <strong>Adaptation failed:</strong> {error}
+    </div>
+  );
+}
+
+function DirectorChangeLine({ changed }: { changed: boolean }) {
+  return <div className="token-usage">Adaptation: {changed ? "changed" : "no change"}</div>;
+}
+
+function ContextFieldsLine({ fields }: { fields: string[] }) {
+  return <div className="token-usage">Context fields used: {fields.length ? fields.join(", ") : "none"}</div>;
+}
+
+function DirectorGateLine({ director, provenance }: { director: DirectorAdaptationSegmentResult; provenance: TranslationProvenance }) {
+  const reasoning = director.usage?.reasoning_tokens;
+  return (
+    <div className="token-usage">
+      Director gate: model {provenance.model_id} · template {provenance.prompt_template_version} · {provenance.timestamp_utc} · tokens{" "}
+      {director.usage?.total_tokens ?? "—"}
+      {reasoning != null ? ` (reasoning ${reasoning})` : ""}
+      {director.meaning ? ` · meaning tokens ${director.meaning.usage.total_tokens}` : ""}
     </div>
   );
 }
@@ -460,26 +520,70 @@ function DirectorPanel({ seg, director }: { seg: SegmentInput; director: Directo
     <div className="attempts-panel" aria-label={`Director adaptation for ${seg.id}`}>
       <DirectorSideBySide director={director} />
       <DirectorGatePills director={director} />
-      {director.error && (
-        <div className="meaning-issues">
-          <strong>Adaptation failed:</strong> {director.error}
-        </div>
-      )}
+      {director.error && <DirectorErrorLine error={director.error} />}
       <DirectorMeaningIssues director={director} />
-      {director.changed != null && (
-        <div className="token-usage">Adaptation: {director.changed ? "changed" : "no change"}</div>
-      )}
+      {director.changed != null && <DirectorChangeLine changed={director.changed} />}
+      <ContextFieldsLine fields={director.context_fields_used} />
+      {director.provenance && <DirectorGateLine director={director} provenance={director.provenance} />}
+    </div>
+  );
+}
+
+function AuditionTakeRow({ take }: { take: AuditionTake }) {
+  return (
+    <div className="attempt-row">
+      <span>#{take.take_number}</span>
+      <span>{take.kind}</span>
+      <span className="attempt-text">{take.text}</span>
+      <span>
+        {take.measured_seconds != null ? `${fmtSec(take.measured_seconds)} / ${fmtSec(take.window_seconds)}` : `— / ${fmtSec(take.window_seconds)}`}
+      </span>
+      <span className={take.timing_verdict === "Pass" ? verdictClass("Pass") : take.timing_verdict === "Fail" ? verdictClass("Fail") : "verdict verdict-idle"}>
+        {take.timing_verdict}
+      </span>
+      <span className={verdictClass(take.meaning_verdict)} title={take.meaning_explanation ?? ""}>
+        {take.meaning_verdict}
+      </span>
+      <span>{take.is_winner ? "Winner" : ""}</span>
+      <span>{take.elevenlabs_characters > 0 ? `${take.elevenlabs_characters}c` : "—"}</span>
+    </div>
+  );
+}
+
+function AuditionPanel({ seg, audition }: { seg: SegmentInput; audition: AuditionSegmentReport }) {
+  return (
+    <div className="attempts-panel" aria-label={`Audition for ${seg.id}`}>
       <div className="token-usage">
-        Context fields used: {director.context_fields_used.length ? director.context_fields_used.join(", ") : "none"}
+        Audition: {audition.cast ? `Cast — take #${audition.winner_take_number} (${audition.winner_file_name ?? "—"})` : "Uncast"} · Speaker:{" "}
+        {audition.speaker_id ?? "—"} · Voice: {audition.cast_voice ? `${audition.cast_voice.voice_name} (${audition.cast_voice.voice_id})` : "—"}
       </div>
-      {director.provenance && (
-        <div className="token-usage">
-          Director gate: model {director.provenance.model_id} · template {director.provenance.prompt_template_version} · {director.provenance.timestamp_utc} · tokens{" "}
-          {director.usage?.total_tokens ?? "—"}
-          {director.usage?.reasoning_tokens != null ? ` (reasoning ${director.usage.reasoning_tokens})` : ""}
-          {director.meaning ? ` · meaning tokens ${director.meaning.usage.total_tokens}` : ""}
-        </div>
-      )}
+      <div className="attempt-row attempt-row-header">
+        <span>#</span>
+        <span>Kind</span>
+        <span>Take</span>
+        <span>Measured / window</span>
+        <span>Timing</span>
+        <span>Meaning</span>
+        <span>Winner</span>
+        <span>EL chars</span>
+      </div>
+      {audition.takes.map((t) => (
+        <AuditionTakeRow key={`${audition.id}-${t.take_number}`} take={t} />
+      ))}
+      {audition.takes
+        .filter((t) => t.synthesis_note)
+        .map((t) => (
+          <div key={`${audition.id}-${t.take_number}-note`} className="token-usage">
+            #{t.take_number}: {t.synthesis_note}
+          </div>
+        ))}
+      {audition.takes
+        .filter((t) => t.meaning_issues && t.meaning_issues.length > 0)
+        .map((t) => (
+          <div key={`${audition.id}-${t.take_number}-issues`} className="meaning-issues">
+            <strong>#{t.take_number} meaning issues:</strong> {t.meaning_issues!.join("; ")}
+          </div>
+        ))}
     </div>
   );
 }
@@ -509,7 +613,7 @@ function AttemptToggle({ isExpanded, onToggle }: { isExpanded: boolean; onToggle
   );
 }
 
-function LineCard({ seg, q, translated, scene, director, isExpanded, onToggle }: LineCardProps) {
+function LineCard({ seg, q, translated, scene, director, audition, isExpanded, onToggle }: LineCardProps) {
   const view = deriveLineView(seg, q, translated);
 
   return (
@@ -526,6 +630,7 @@ function LineCard({ seg, q, translated, scene, director, isExpanded, onToggle }:
       {q && isExpanded && <AttemptsPanel q={q} shownAttempt={view.shownAttempt} />}
       {scene && <ScenePanel seg={seg} scene={scene} />}
       {director && director.status !== "NotRequested" && <DirectorPanel seg={seg} director={director} />}
+      {audition && <AuditionPanel seg={seg} audition={audition} />}
     </article>
   );
 }
@@ -631,9 +736,10 @@ interface ToolbarProps {
   onQa: () => Promise<void>;
   onScene: () => Promise<void>;
   onDirector: () => Promise<void>;
+  onAudition: () => Promise<void>;
 }
 
-function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadSample, onTranslate, onQa, onScene, onDirector }: ToolbarProps) {
+function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadSample, onTranslate, onQa, onScene, onDirector, onAudition }: ToolbarProps) {
   const disabled = busy !== null || segments.length === 0;
   return (
     <div className="toolbar">
@@ -649,6 +755,9 @@ function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadS
         </button>
         <button type="button" className="btn btn-primary" onClick={() => void onDirector()} disabled={disabled}>
           {busy === "director" ? "Running Director…" : "Run Director"}
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => void onAudition()} disabled={disabled}>
+          {busy === "audition" ? "Running Audition…" : "Run Audition"}
         </button>
         <span className="toolbar-hint">
           {segments.length} segments · {from} → {to}
@@ -673,11 +782,12 @@ interface LineListProps {
   batchById: Map<string, string> | null;
   sceneById: Map<number, SceneSegmentResult> | null;
   directorById: Map<string, DirectorAdaptationSegmentResult> | null;
+  auditionById: Map<string, AuditionSegmentReport> | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
 }
 
-function LineList({ segments, qaById, batchById, sceneById, directorById, expanded, onToggle }: LineListProps) {
+function LineList({ segments, qaById, batchById, sceneById, directorById, auditionById, expanded, onToggle }: LineListProps) {
   return (
     <div className="lines" role="list">
       {segments.map((seg, idx) => (
@@ -688,6 +798,7 @@ function LineList({ segments, qaById, batchById, sceneById, directorById, expand
           translated={batchById?.get(seg.id) ?? null}
           scene={sceneById?.get(idx)}
           director={directorById?.get(seg.id)}
+          audition={auditionById?.get(seg.id)}
           isExpanded={expanded[seg.id] ?? false}
           onToggle={() => onToggle(seg.id)}
         />
@@ -743,20 +854,23 @@ function useReports() {
   const [batch, setBatch] = useState<TranslateBatch | null>(null);
   const [scene, setScene] = useState<SceneContextBatch | null>(null);
   const [director, setDirector] = useState<DirectorAdaptationBatch | null>(null);
+  const [audition, setAudition] = useState<AuditionReport | null>(null);
 
   const reset = useCallback(() => {
     setQa(null);
     setBatch(null);
     setScene(null);
     setDirector(null);
+    setAudition(null);
   }, []);
   const sceneById = useMemo(() => (scene ? new Map(scene.segments.map((s, i) => [i, s] as const)) : null), [scene]);
   const qaById = useMemo(() => (qa ? new Map(qa.segments.map((s) => [s.id, s] as const)) : null), [qa]);
   const batchById = useMemo(() => (batch ? new Map(batch.segments.map((s) => [s.id, s.translation] as const)) : null), [batch]);
 
   const directorById = useMemo(() => (director ? new Map(director.segments.map((s) => [s.id, s] as const)) : null), [director]);
+  const auditionById = useMemo(() => (audition ? new Map(audition.segments.map((s) => [s.id, s] as const)) : null), [audition]);
 
-  return { qa, setQa, batch, setBatch, scene, setScene, director, setDirector, reset, qaById, sceneById, batchById, directorById };
+  return { qa, setQa, batch, setBatch, scene, setScene, director, setDirector, audition, setAudition, reset, qaById, sceneById, batchById, directorById, auditionById };
 }
 
 function useSegments(onReset: () => void, setError: React.Dispatch<React.SetStateAction<string | null>>) {
@@ -805,15 +919,17 @@ interface ActionsContext {
   setQa: (qa: QaReport) => void;
   setScene: (scene: SceneContextBatch) => void;
   setDirector: (director: DirectorAdaptationBatch) => void;
+  setAudition: (audition: AuditionReport) => void;
   qaById: Map<string, QaSegmentReport> | null;
   batchById: Map<string, string> | null;
   sceneById: Map<number, SceneSegmentResult> | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   sceneRequestRef: React.RefObject<number>;
   directorRequestRef: React.RefObject<number>;
+  auditionRequestRef: React.RefObject<number>;
 }
 
-function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, qaById, batchById, sceneById, setError, sceneRequestRef, directorRequestRef }: ActionsContext) {
+function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, setAudition, qaById, batchById, sceneById, setError, sceneRequestRef, directorRequestRef, auditionRequestRef }: ActionsContext) {
   const [busy, setBusy] = useState<BusyState>(null);
 
   const run = useCallback(async (kind: Exclude<BusyState, null>, action: () => Promise<void>) => {
@@ -882,7 +998,15 @@ function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setSce
     });
   }, [run, segments, from, to, setDirector, qaById, batchById, sceneById, directorRequestRef]);
 
-  return { busy, runTranslate, runQa, runScene, runDirector };
+  const runAudition = useCallback(async () => {
+    const requestId = ++auditionRequestRef.current;
+    await run("audition", async () => {
+      const res = await postAudition(segments, from, to);
+      if (requestId === auditionRequestRef.current) setAudition(res);
+    });
+  }, [run, segments, from, to, setAudition, auditionRequestRef]);
+
+  return { busy, runTranslate, runQa, runScene, runDirector, runAudition };
 }
 
 export default function App() {
@@ -891,10 +1015,12 @@ export default function App() {
   const reports = useReports();
   const sceneRequestRef = useRef(0);
   const directorRequestRef = useRef(0);
+  const auditionRequestRef = useRef(0);
   const onReset = useCallback(() => {
     reports.reset();
     sceneRequestRef.current += 1;
     directorRequestRef.current += 1;
+    auditionRequestRef.current += 1;
   }, [reports]);
   const input = useSegments(onReset, setError);
   const actions = useActions({
@@ -906,12 +1032,14 @@ export default function App() {
     setQa: reports.setQa,
     setScene: reports.setScene,
     setDirector: reports.setDirector,
+    setAudition: reports.setAudition,
     qaById: reports.qaById,
     batchById: reports.batchById,
     sceneById: reports.sceneById,
     setError,
     sceneRequestRef,
     directorRequestRef,
+    auditionRequestRef,
   });
 
   return (
@@ -930,6 +1058,7 @@ export default function App() {
           onQa={actions.runQa}
           onScene={actions.runScene}
           onDirector={actions.runDirector}
+          onAudition={actions.runAudition}
         />
         <LineList
           segments={input.segments}
@@ -937,6 +1066,7 @@ export default function App() {
           batchById={reports.batchById}
           sceneById={reports.sceneById}
           directorById={reports.directorById}
+          auditionById={reports.auditionById}
           expanded={input.expanded}
           onToggle={input.toggle}
         />

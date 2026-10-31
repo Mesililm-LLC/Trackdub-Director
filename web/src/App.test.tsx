@@ -420,6 +420,118 @@ describe("App smoke", () => {
     expect(screen.queryByText("Director: Passed")).not.toBeInTheDocument();
   });
 
+  it("shows read-only audition takes with winner marked after Run Audition", async () => {
+    const auditionMock = {
+      source_language: "en",
+      target_language: "es",
+      cast: [
+        { speaker_id: "anna", voice_id: "voice-alba", voice_name: "Alba" },
+        { speaker_id: "ashley", voice_id: "voice-zoe", voice_name: "Zoe" },
+      ],
+      segments: [
+        {
+          id: "seg-001",
+          text: "Hello",
+          speaker_id: "anna",
+          cast_voice: { speaker_id: "anna", voice_id: "voice-alba", voice_name: "Alba" },
+          window_seconds: 1.0,
+          takes: [
+            {
+              take_number: 1,
+              kind: "Initial",
+              text: "Una toma mas.",
+              meaning_verdict: "Fail",
+              meaning_issues: ["dropped subject"],
+              meaning_explanation: "Omits subject.",
+              synthesized: false,
+              window_seconds: 1.0,
+              timing_verdict: "NotSynthesized",
+              is_winner: false,
+              synthesis_note: "Meaning gate did not pass; not synthesized.",
+              translation_tokens: 15,
+              meaning_tokens: 11,
+              elevenlabs_characters: 0,
+            },
+            {
+              take_number: 2,
+              kind: "Revision",
+              text: "Hola.",
+              meaning_verdict: "Pass",
+              meaning_issues: [],
+              meaning_explanation: "Meaning preserved.",
+              synthesized: true,
+              measured_seconds: 0.92,
+              window_seconds: 1.0,
+              timing_verdict: "Pass",
+              is_winner: true,
+              audio_file_name: "seg-001-take2.wav",
+              translation_tokens: 15,
+              meaning_tokens: 11,
+              elevenlabs_characters: 5,
+            },
+          ],
+          cast: true,
+          winner_take_number: 2,
+          winner_file_name: "seg-001-take2.wav",
+        },
+        {
+          id: "seg-002",
+          text: "Action!",
+          speaker_id: "ashley",
+          cast_voice: { speaker_id: "ashley", voice_id: "voice-zoe", voice_name: "Zoe" },
+          window_seconds: 0.6,
+          takes: [
+            {
+              take_number: 1,
+              kind: "Initial",
+              text: "Accion!",
+              meaning_verdict: "Pass",
+              meaning_issues: [],
+              meaning_explanation: "Meaning preserved.",
+              synthesized: true,
+              measured_seconds: 1.4,
+              window_seconds: 0.6,
+              timing_verdict: "Fail",
+              is_winner: false,
+              audio_file_name: "seg-002-take1.wav",
+              translation_tokens: 15,
+              meaning_tokens: 11,
+              elevenlabs_characters: 7,
+            },
+          ],
+          cast: false,
+        },
+      ],
+      totals: { total_segments: 2, lines_cast: 1, takes_synthesized: 2, meta_calls: 5, translation_tokens: 45, meaning_tokens: 33, elevenlabs_characters: 12, elevenlabs_cap_hit: false, meta_cap_hit: false },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/audition")) return new Response(JSON.stringify(auditionMock), { status: 200 });
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Audition" }).click();
+    await waitFor(() => expect(screen.getByText(/Audition: Cast/)).toBeInTheDocument());
+
+    const seg1 = getCard("seg-001");
+    expect(within(seg1).getByText(/Voice: Alba \(voice-alba\)/)).toBeInTheDocument();
+    expect(within(seg1).getByText("Una toma mas.")).toBeInTheDocument();
+    expect(within(seg1).getByText("Fail")).toBeInTheDocument();
+    expect(within(seg1).getByText(/Meaning gate did not pass/)).toBeInTheDocument();
+    expect(within(seg1).getByText("Hola.")).toBeInTheDocument();
+    expect(within(seg1).getByText(/0\.92s \/ 1\.00s/)).toBeInTheDocument();
+    expect(within(seg1).getAllByText("Winner").length).toBeGreaterThanOrEqual(2);
+
+    const seg2 = getCard("seg-002");
+    expect(within(seg2).getByText(/Audition: Uncast/)).toBeInTheDocument();
+    // Only the column header matches "Winner"; no take is marked.
+    expect(within(seg2).getAllByText("Winner")).toHaveLength(1);
+  });
+
   it("shows read-only scene context after Run Scene", async () => {
     const sceneMock = {
       segments: [

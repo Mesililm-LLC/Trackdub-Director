@@ -939,6 +939,29 @@ public sealed class ServerEndpointTests
     }
 
     [Fact]
+    public async Task Audition_without_elevenlabs_key_fails_closed_without_meta_calls()
+    {
+        using var auth = FakeAuth();
+        using var elevenLabs = EnvShim(ElevenLabsAuth.ApiKeyEnv, "");
+        int metaCalls = 0;
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) =>
+        {
+            metaCalls++;
+            return Task.FromResult(ChatOk("muse-spark-1.1", "Hola."));
+        }));
+        using HttpClient client = factory.CreateClient();
+
+        var body = new { segments = new[] { new { id = "seg-1", text = "Hello.", duration_seconds = 1.0, speaker_id = "anna" } } };
+        HttpResponseMessage resp = await client.PostAsJsonAsync("/api/audition", body);
+        string json = await resp.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+        Assert.Contains("No ElevenLabs API key", json);
+        Assert.Equal(0, metaCalls);
+        Assert.DoesNotContain("test-fake-key", json.ToLowerInvariant());
+    }
+
+    [Fact]
     public async Task SceneContext_accepts_a_raw_segment_array_without_frames()
     {
         using var auth = FakeAuth();
