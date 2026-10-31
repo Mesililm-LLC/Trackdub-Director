@@ -56,7 +56,8 @@ public sealed record AuditionSegmentReport(
     [property: JsonPropertyName("takes")] AuditionTakeReport[] Takes,
     [property: JsonPropertyName("cast")] bool Cast,
     [property: JsonPropertyName("winner_take_number")] int? WinnerTakeNumber,
-    [property: JsonPropertyName("winner_file_name")] string? WinnerFileName);
+    [property: JsonPropertyName("winner_file_name")] string? WinnerFileName,
+    [property: JsonPropertyName("note")] string? Note = null);
 
 public sealed record AuditionTotals(
     [property: JsonPropertyName("total_segments")] int TotalSegments,

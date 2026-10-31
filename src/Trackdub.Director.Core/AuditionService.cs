@@ -261,7 +261,8 @@ public sealed class AuditionService
             [],
             Cast: false,
             WinnerTakeNumber: null,
-            WinnerFileName: null);
+            WinnerFileName: null,
+            Note: run.MetaCapHit ? "Not checked: the Meta call budget ran out before this segment's QA." : null);
     }
 
     private async Task<AuditionSegmentReport> ProcessSegmentAsync(
@@ -397,7 +398,10 @@ public sealed class AuditionService
     {
         if (take.MeaningVerdict != MeaningVerdict.Pass)
         {
-            return "Meaning gate did not pass; not synthesized.";
+            // NotEvaluated with the Meta cap hit means the budget ran out before this take's meaning check.
+            return run.MetaCapHit && take.MeaningVerdict == MeaningVerdict.NotEvaluated
+                ? "Meta call budget ran out before the meaning check; not synthesized."
+                : "Meaning gate did not pass; not synthesized.";
         }
 
         if (take.Cast is null)
@@ -468,7 +472,8 @@ public sealed class AuditionService
     /// <summary>
     /// File name for a winning take. Segment ids come from the request, so the stem keeps only
     /// ASCII letters, digits, '-' and '_'. An id that had to change, or that is too long for the
-    /// stem, gets a short hash suffix, so distinct ids cannot collapse onto one file.
+    /// stem, gets a hash suffix after a '.', which a clean id can never contain. A hashed name
+    /// therefore never equals a clean one, and the 64-bit hash keeps distinct ids apart.
     /// </summary>
     public static string TakeFileName(string segmentId, int takeNumber)
     {
@@ -479,7 +484,7 @@ public sealed class AuditionService
         if (sanitized != segmentId || sanitized.Length > MaxStemLength)
         {
             byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(segmentId));
-            stem = $"{stem}-{Convert.ToHexString(digest, 0, 4).ToLowerInvariant()}";
+            stem = $"{stem}.{Convert.ToHexString(digest, 0, 8).ToLowerInvariant()}";
         }
 
         return $"{stem}-take{takeNumber}.wav";

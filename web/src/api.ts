@@ -324,6 +324,7 @@ export type AuditionSegmentReport = {
   cast: boolean;
   winner_take_number?: number;
   winner_file_name?: string;
+  note?: string;
 };
 
 export type AuditionReport = {
