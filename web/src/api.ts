@@ -288,6 +288,86 @@ export async function postDirectorAdaptation(
   return (await r.json()) as DirectorAdaptationBatch;
 }
 
+// Audition casting: takes whose meaning gate ran before synthesis; timing is
+// measured audio duration vs the stamped window. Failed takes stay listed.
+export type AuditionCastVoice = {
+  speaker_id: string;
+  voice_id: string;
+  voice_name: string;
+};
+
+export type AuditionTake = {
+  take_number: number;
+  kind: string; // Initial | Revision
+  text: string;
+  meaning_verdict: string; // Pass | Fail | Error | NotEvaluated
+  meaning_issues: string[] | null;
+  meaning_explanation: string | null;
+  synthesized: boolean;
+  measured_seconds?: number;
+  window_seconds: number;
+  timing_verdict: string; // Pass | Fail | NotSynthesized
+  is_winner: boolean;
+  audio_file_name?: string;
+  synthesis_note?: string;
+  translation_tokens: number;
+  meaning_tokens: number;
+  elevenlabs_characters: number;
+};
+
+export type AuditionSegmentReport = {
+  id: string;
+  text: string;
+  speaker_id?: string;
+  cast_voice?: AuditionCastVoice;
+  window_seconds: number;
+  takes: AuditionTake[];
+  cast: boolean;
+  winner_take_number?: number;
+  winner_file_name?: string;
+};
+
+export type AuditionReport = {
+  source_language: string;
+  target_language: string;
+  cast: AuditionCastVoice[];
+  segments: AuditionSegmentReport[];
+  totals: {
+    total_segments: number;
+    lines_cast: number;
+    takes_synthesized: number;
+    meta_calls: number;
+    translation_tokens: number;
+    meaning_tokens: number;
+    elevenlabs_characters: number;
+    elevenlabs_cap_hit: boolean;
+    meta_cap_hit: boolean;
+  };
+};
+
+export async function postAudition(
+  segments: SegmentInput[],
+  from = "en",
+  to = "es",
+): Promise<AuditionReport> {
+  const auditionSegments = segments.map((s) => ({
+    id: s.id,
+    text: s.text,
+    duration_seconds: s.duration_seconds ?? null,
+    speaker_id: s.speaker_id ?? null,
+  }));
+  const r = await fetch("/api/audition", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segments: auditionSegments, sourceLanguage: from, targetLanguage: to }),
+  });
+  if (!r.ok) {
+    const bodyText = await r.text().catch(() => "");
+    throw new Error(`POST /api/audition ${r.status}: ${bodyText.slice(0, 600)}`);
+  }
+  return (await r.json()) as AuditionReport;
+}
+
 export async function fetchStatus(): Promise<StatusResponse> {
   const r = await fetch("/api/status");
   if (!r.ok) throw new Error(`GET /api/status ${r.status}`);

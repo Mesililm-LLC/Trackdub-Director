@@ -18,6 +18,7 @@ builder.Services.AddSingleton(_ => new HttpClient(new HttpClientHandler()) { Tim
 builder.Services.AddTransient(sp => new MetaClient(sp.GetRequiredService<HttpClient>()));
 builder.Services.AddTransient<TranslationService>(sp => new TranslationService(sp.GetRequiredService<MetaClient>()));
 builder.Services.AddTransient<SceneContextService>(sp => new SceneContextService(sp.GetRequiredService<MetaClient>()));
+builder.Services.AddTransient<ITtsProvider>(sp => new ElevenLabsTtsProvider(sp.GetRequiredService<HttpClient>()));
 
 // JSON: keep defaults but ensure case-insensitive reads and respect JsonPropertyName attributes
 builder.Services.ConfigureHttpJsonOptions(opts =>
@@ -250,6 +251,57 @@ app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient c
     }
 });
 
+app.MapPost("/api/audition", async (HttpRequest request, MetaClient client, ITtsProvider tts, CancellationToken ct) =>
+{
+    AuditionApiRequest? req;
+    try
+    {
+        req = await ReadAuditionRequestAsync(request, ct).ConfigureAwait(false);
+    }
+    catch (JsonException ex)
+    {
+        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    if (req is null || req.Segments.Count == 0)
+    {
+        return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, text, duration_seconds?, speaker_id? }." });
+    }
+
+    string? validationError = ValidateAuditionSegments(req.Segments);
+    if (validationError is not null)
+    {
+        return Results.BadRequest(new { error = validationError });
+    }
+
+    string from = ResolveLanguage(req.SourceLanguage, "en");
+    string to = ResolveLanguage(req.TargetLanguage, "es");
+
+    try
+    {
+        var service = new AuditionService(client, tts, QaOptions.FromEnvironment());
+        AuditionReport report = await service.RunAsync(req.Segments, from, to, ct).ConfigureAwait(false);
+        await TryWriteAuditionOutputsAsync(report, ct).ConfigureAwait(false);
+        return Results.Json(report);
+    }
+    catch (TtsApiException ex)
+    {
+        return MapTtsException(ex);
+    }
+    catch (MetaApiException ex)
+    {
+        return MapMetaException(ex);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 // SPA fallback: for non-/api routes, serve index.html if it exists (after a prod build)
 app.MapFallback(async (HttpContext ctx) =>
 {
@@ -317,6 +369,92 @@ public partial class Program
         }
 
         return Results.Json(new { error = msg }, statusCode: 502);
+    }
+
+    private static IResult MapTtsException(TtsApiException ex)
+    {
+        string msg = ex.Message ?? "ElevenLabs API error";
+        if (msg.Contains("No ElevenLabs API key", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("HTTP 401", StringComparison.Ordinal)
+            || msg.Contains("HTTP 403", StringComparison.Ordinal))
+        {
+            return Results.Json(new { error = msg }, statusCode: 401);
+        }
+
+        return Results.Json(new { error = msg }, statusCode: 502);
+    }
+
+    private static async Task<AuditionApiRequest?> ReadAuditionRequestAsync(HttpRequest http, CancellationToken ct)
+    {
+        using var doc = await JsonDocument.ParseAsync(http.Body, cancellationToken: ct).ConfigureAwait(false);
+        JsonElement root = doc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            var arr = JsonSerializer.Deserialize<AuditionSegmentInput[]>(root.GetRawText(), JsonOptionsWeb)
+                ?? throw new InvalidOperationException("Invalid segments array.");
+            return new AuditionApiRequest(arr, null, null);
+        }
+
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("segments", out JsonElement segEl))
+        {
+            throw new InvalidOperationException("Request must include a non-empty 'segments' array.");
+        }
+
+        var segments = JsonSerializer.Deserialize<AuditionSegmentInput[]>(segEl.GetRawText(), JsonOptionsWeb)
+            ?? throw new InvalidOperationException("Invalid 'segments' array.");
+
+        string? from = ReadFirstPresentString(root, "sourceLanguage", "source_language", "from");
+        string? to = ReadFirstPresentString(root, "targetLanguage", "target_language", "to");
+
+        return new AuditionApiRequest(segments, from, to);
+    }
+
+    private static string? ValidateAuditionSegments(IReadOnlyList<AuditionSegmentInput> segments)
+    {
+        if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id) || s.Text is null))
+        {
+            return "Each segment must have a non-empty 'id' and 'text'.";
+        }
+
+        if (segments.Select(s => s!.Id.Trim()).Distinct(StringComparer.Ordinal).Count() != segments.Count)
+        {
+            return "Duplicate segment ids are not allowed.";
+        }
+
+        if (segments.Count > MaxAuditionSegments)
+        {
+            return $"At most {MaxAuditionSegments} segments are allowed per request.";
+        }
+
+        return null;
+    }
+
+    // Persists winning WAVs + the tracked manifest only when AUDITION_OUTPUT_DIR
+    // names the dataset folder (live capture runs). API tests leave it unset so
+    // no fake-run files ever land in the repo.
+    private static async Task TryWriteAuditionOutputsAsync(AuditionReport report, CancellationToken ct)
+    {
+        string? outputDir = Environment.GetEnvironmentVariable("AUDITION_OUTPUT_DIR");
+        if (string.IsNullOrWhiteSpace(outputDir))
+        {
+            return;
+        }
+
+        string auditionDir = Path.Combine(outputDir, "media", "audition");
+        Directory.CreateDirectory(auditionDir);
+        foreach (AuditionSegmentReport segment in report.Segments)
+        {
+            AuditionTakeReport? winner = segment.Takes.FirstOrDefault(t => t.IsWinner);
+            if (winner?.AudioBytes is { } bytes && segment.WinnerFileName is not null)
+            {
+                await File.WriteAllBytesAsync(Path.Combine(auditionDir, segment.WinnerFileName), bytes, ct).ConfigureAwait(false);
+            }
+        }
+
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+        string manifest = JsonSerializer.Serialize(report, options);
+        await File.WriteAllTextAsync(Path.Combine(outputDir, "audition-manifest.json"), manifest, ct).ConfigureAwait(false);
     }
 
     private static async Task<TranslateRequest?> ReadTranslateRequestAsync(HttpRequest http, CancellationToken ct)
@@ -583,6 +721,7 @@ public partial class Program
     private const int MaxSceneSegments = 100;
     private const int MaxConceptsPerSegment = 8;
     private const int MaxAdaptationSegments = 100;
+    private const int MaxAuditionSegments = 100;
 
     // Each validator returns the error message to send back, or null when the request is acceptable.
     private static string? ValidateSceneSegments(SceneSegmentInput[] segments)
@@ -664,6 +803,11 @@ internal sealed record QaApiRequest(
 
 internal sealed record AdaptationApiRequest(
     IReadOnlyList<DirectorAdaptationSegmentInput> Segments,
+    string? SourceLanguage,
+    string? TargetLanguage);
+
+internal sealed record AuditionApiRequest(
+    IReadOnlyList<AuditionSegmentInput> Segments,
     string? SourceLanguage,
     string? TargetLanguage);
 
