@@ -153,6 +153,12 @@ internal static class ApiEndpoints
             return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, frame_image_data_url, box, source_text, target_text }." });
         }
 
+        string? validationError = ValidateVisualSegments(segments);
+        if (validationError is not null)
+        {
+            return Results.BadRequest(new { error = validationError });
+        }
+
         return await ApiHandlers.GuardAsync(async () =>
         {
             VisualLocalisationBatch batch = await service.RunAsync(segments, ct).ConfigureAwait(false);

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import App from "./App";
 
@@ -162,6 +162,45 @@ function mockFetchForQa() {
 describe("App smoke", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", mockFetchForQa());
+  });
+
+  it("shows each visual result for duplicate segment ids in input order", async () => {
+    const provenance = { model_id: "model", endpoint_host: "host", timestamp_utc: "time", prompt_template_version: "v1" };
+    const visual = { segments: [
+      { id: "same", status: "Failed", error: "first result", provenance, usage: { total_tokens: 0 }, image_calls: 0 },
+      { id: "same", status: "Failed", error: "second result", provenance, usage: { total_tokens: 0 }, image_calls: 0 },
+    ] };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      return new Response(JSON.stringify(url.includes("/api/status") ? statusOk : visual), { status: 200 });
+    }));
+    const { container } = render(<App />);
+    const file = new File([], "segments.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => JSON.stringify([{ id: "same", text: "First" }, { id: "same", text: "Second" }]) });
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+    await screen.findByText("First");
+    fireEvent.click(screen.getByRole("button", { name: "Run Visual" }));
+    await screen.findByText(/first result/);
+    const cards = screen.getAllByRole("listitem");
+    expect(within(cards[0]).getByText(/first result/)).toBeInTheDocument();
+    expect(within(cards[1]).getByText(/second result/)).toBeInTheDocument();
+  });
+
+  it.each([false, true])("reports visual errors only for current requests (invalidated: %s)", async (invalidated) => {
+    let rejectVisual!: (reason: Error) => void;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (input.toString().includes("/api/status")) return Promise.resolve(new Response(JSON.stringify(statusOk), { status: 200 }));
+      return new Promise<Response>((_, reject) => { rejectVisual = reject; });
+    }));
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Run Visual" }));
+    if (invalidated) fireEvent.click(screen.getByRole("button", { name: "Load sample" }));
+    await act(async () => { rejectVisual(new Error("visual request failed")); });
+    if (invalidated) {
+      expect(screen.queryByText("visual request failed")).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByText("visual request failed")).toBeInTheDocument();
+    }
   });
 
   it("renders line list from sample and QA summary after Run QA", async () => {

@@ -167,6 +167,8 @@ internal static class RequestValidation
 
     private const int MaxAuditionSegments = 100;
 
+    private const int MaxVisualSegments = 100;
+
     // Bounds per-segment request size and the number of Meta and TTS calls one line can cost.
     private const int MaxAuditionTextLength = 1000;
 
@@ -194,6 +196,18 @@ internal static class RequestValidation
     internal static string? ValidateAdaptationSegments(IReadOnlyList<DirectorAdaptationSegmentInput> segments)
     {
         return ValidateSegments(segments, AdaptationRules);
+    }
+
+    internal static string? ValidateVisualSegments(VisualLocalisationSegmentInput[] segments)
+    {
+        if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
+        {
+            return "Each segment must have a non-empty 'id'.";
+        }
+
+        return segments.Length > MaxVisualSegments
+            ? $"At most {MaxVisualSegments} segments are allowed per request."
+            : null;
     }
 
     // Trims the caller's language, or falls back to the default when it is missing or blank.

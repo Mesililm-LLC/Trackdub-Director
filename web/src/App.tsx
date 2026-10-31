@@ -851,7 +851,7 @@ interface LineListProps {
   sceneById: Map<number, SceneSegmentResult> | null;
   directorById: Map<string, DirectorAdaptationSegmentResult> | null;
   auditionById: Map<string, AuditionSegmentReport> | null;
-  visualById: Map<string, VisualLocalisationSegmentResult> | null;
+  visualById: Map<number, VisualLocalisationSegmentResult> | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
 }
@@ -861,14 +861,14 @@ function LineList({ segments, qaById, batchById, sceneById, directorById, auditi
     <div className="lines" role="list">
       {segments.map((seg, idx) => (
         <LineCard
-          key={seg.id}
+          key={idx}
           seg={seg}
           q={qaById?.get(seg.id)}
           translated={batchById?.get(seg.id) ?? null}
           scene={sceneById?.get(idx)}
           director={directorById?.get(seg.id)}
           audition={auditionById?.get(seg.id)}
-          visual={visualById?.get(seg.id)}
+          visual={visualById?.get(idx)}
           isExpanded={expanded[seg.id] ?? false}
           onToggle={() => onToggle(seg.id)}
         />
@@ -941,7 +941,7 @@ function useReports() {
 
   const directorById = useMemo(() => (director ? new Map(director.segments.map((s) => [s.id, s] as const)) : null), [director]);
   const auditionById = useMemo(() => (audition ? new Map(audition.segments.map((s) => [s.id, s] as const)) : null), [audition]);
-  const visualById = useMemo(() => (visual ? new Map(visual.segments.map((s) => [s.id, s] as const)) : null), [visual]);
+  const visualById = useMemo(() => (visual ? new Map(visual.segments.map((s, i) => [i, s] as const)) : null), [visual]);
 
   return { qa, setQa, batch, setBatch, scene, setScene, director, setDirector, audition, setAudition, visual, setVisual, reset, qaById, sceneById, batchById, directorById, auditionById, visualById };
 }
@@ -1084,8 +1084,12 @@ function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setSce
   const runVisual = useCallback(async () => {
     const requestId = ++visualRequestRef.current;
     await run("visual", async () => {
-      const res = await postVisualLocalisation(segments);
-      if (requestId === visualRequestRef.current) setVisual(res);
+      try {
+        const res = await postVisualLocalisation(segments);
+        if (requestId === visualRequestRef.current) setVisual(res);
+      } catch (error) {
+        if (requestId === visualRequestRef.current) throw error;
+      }
     });
   }, [run, segments, setVisual, visualRequestRef]);
 

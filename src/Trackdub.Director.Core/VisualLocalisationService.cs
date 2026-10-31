@@ -110,6 +110,11 @@ public sealed class VisualLocalisationService
 
         RasterImage resized = edit.Image.ResizeBilinear(crop.Width, crop.Height);
         RasterImage patch = resized.Crop(box.X1 - cropX, box.Y1 - cropY, boxWidth, boxHeight);
+        if (patch.Rgb.AsSpan().SequenceEqual(frame.Crop(box.X1, box.Y1, boxWidth, boxHeight).Rgb))
+        {
+            return Failure("Edited image did not change the target box.", edit.Model, edit.Usage);
+        }
+
         RasterImage localised = frame.Paste(patch, box.X1, box.Y1);
         int outsideDiff = localised.CountDiffOutsideBox(frame, box.X1, box.Y1, box.X2, box.Y2);
 

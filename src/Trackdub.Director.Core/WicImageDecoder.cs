@@ -22,6 +22,7 @@ public static class WicImageDecoder
     private static readonly Guid Format32BppPrgba = new("3cc4a650-a527-4d37-a916-3142c7ebedba");
     private static readonly Guid Format8BppGray = new("6fddc324-4e03-4bfe-b185-3d77768dc908");
 
+    /// <summary>Decodes an image using WIC. This operation is available only on Windows.</summary>
     public static RasterImage Decode(byte[] imageBytes)
     {
         ArgumentNullException.ThrowIfNull(imageBytes);
@@ -74,6 +75,12 @@ public static class WicImageDecoder
             if (width == 0 || height == 0 || width > 16384 || height > 16384)
             {
                 throw new InvalidOperationException($"Decoded image has unusable dimensions {width}x{height}.");
+            }
+
+            const ulong maxPixels = 16_777_216;
+            if ((ulong)width * height > maxPixels)
+            {
+                throw new InvalidOperationException($"Decoded image exceeds the {maxPixels} pixel limit.");
             }
 
             int bytesPerPixel = BytesPerPixel(format);

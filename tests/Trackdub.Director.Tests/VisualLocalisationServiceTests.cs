@@ -1,6 +1,18 @@
+using System.Buffers.Binary;
 using Trackdub.Director.Core;
 
 namespace Trackdub.Director.Tests;
+
+public sealed class WindowsFactAttribute : FactAttribute
+{
+    public WindowsFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Skip = "Requires Windows Imaging Component.";
+        }
+    }
+}
 
 public sealed class VisualLocalisationServiceTests
 {
@@ -44,7 +56,7 @@ public sealed class VisualLocalisationServiceTests
         return (image.Rgb[i], image.Rgb[i + 1], image.Rgb[i + 2]);
     }
 
-    [Fact]
+    [WindowsFact]
     public async Task Composite_places_edit_at_exact_box_with_outside_pixels_identical()
     {
         // Model returns a 2x solid-magenta raster regardless of crop size.
@@ -83,6 +95,43 @@ public sealed class VisualLocalisationServiceTests
         Assert.Equal(((byte)10, (byte)20, (byte)30), Pixel(localised, 99, 79));
         // Byte-level: every outside-box pixel equals the source raster.
         Assert.Equal(0, localised.CountDiffOutsideBox(frame, box.X1, box.Y1, box.X2, box.Y2));
+    }
+
+    [Fact]
+    public async Task Unchanged_box_fails_even_when_the_surrounding_crop_changes()
+    {
+        var fake = new FakeImageClient(crop =>
+        {
+            byte[] pixels = (byte[])crop.Rgb.Clone();
+            pixels[0] = 99;
+            return new MuseImageEditResult(RasterImage.Create(crop.Width, crop.Height, pixels), "test-model", new MetaClient.TokenUsage(1, 2, 3), null);
+        });
+        var service = new VisualLocalisationService(fake);
+
+        VisualLocalisationSegmentResult result = await service.LocaliseRasterAsync(
+            "seg-1", Solid(100, 80, 1, 2, 3), new LocalisationBox(30, 20, 60, 50), "source", "target");
+
+        Assert.Equal(VisualLocalisationStatus.Failed, result.Status);
+        Assert.Null(result.LocalisedImageDataUrl);
+        Assert.Null(result.LocalisedPngBytes);
+        Assert.Contains("did not change", result.Error);
+        Assert.Equal(1, result.ImageCalls);
+        Assert.Equal(3, result.Usage.TotalTokens);
+        Assert.Equal("test-model", result.Provenance.ModelId);
+    }
+
+    [Fact]
+    public async Task Changed_box_returns_localised_without_platform_decoder()
+    {
+        var fake = new FakeImageClient(crop => new MuseImageEditResult(
+            Solid(crop.Width * 2, crop.Height * 2, 9, 9, 9), "test-model", null, null));
+        var service = new VisualLocalisationService(fake);
+        VisualLocalisationSegmentResult result = await service.LocaliseRasterAsync(
+            "seg-1", Solid(100, 80, 1, 2, 3), new LocalisationBox(30, 20, 60, 50), "source", "target");
+
+        Assert.Equal(VisualLocalisationStatus.Localised, result.Status);
+        Assert.NotNull(result.LocalisedPngBytes);
+        Assert.Equal(0, result.OutsideBoxDiff);
     }
 
     [Fact]
@@ -137,7 +186,7 @@ public sealed class VisualLocalisationServiceTests
         Assert.Contains("does not lie inside", result.Error ?? string.Empty);
     }
 
-    [Fact]
+    [WindowsFact]
     public void PngCodec_output_decodes_back_to_the_same_pixels()
     {
         RasterImage source = Solid(17, 9, 200, 100, 50);
@@ -145,5 +194,27 @@ public sealed class VisualLocalisationServiceTests
         RasterImage decoded = WicImageDecoder.Decode(png);
         Assert.Equal((17, 9), (decoded.Width, decoded.Height));
         Assert.Equal(source.Rgb, decoded.Rgb);
+    }
+
+    [WindowsFact]
+    public void Decoder_rejects_frame_above_total_pixel_limit()
+    {
+        const int width = 4097;
+        const int height = 4096;
+        const int stride = (width * 3 + 3) & ~3;
+        byte[] bitmap = new byte[54 + stride * height];
+        bitmap[0] = (byte)'B';
+        bitmap[1] = (byte)'M';
+        BinaryPrimitives.WriteInt32LittleEndian(bitmap.AsSpan(2), bitmap.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(bitmap.AsSpan(10), 54);
+        BinaryPrimitives.WriteInt32LittleEndian(bitmap.AsSpan(14), 40);
+        BinaryPrimitives.WriteInt32LittleEndian(bitmap.AsSpan(18), width);
+        BinaryPrimitives.WriteInt32LittleEndian(bitmap.AsSpan(22), height);
+        BinaryPrimitives.WriteInt16LittleEndian(bitmap.AsSpan(26), 1);
+        BinaryPrimitives.WriteInt16LittleEndian(bitmap.AsSpan(28), 24);
+        BinaryPrimitives.WriteInt32LittleEndian(bitmap.AsSpan(34), stride * height);
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => WicImageDecoder.Decode(bitmap));
+        Assert.Contains("pixel limit", error.Message);
     }
 }
