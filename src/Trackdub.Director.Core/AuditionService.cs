@@ -354,6 +354,11 @@ public sealed class AuditionService
         RunState run,
         CancellationToken cancellationToken)
     {
+        if (work.Cast is null)
+        {
+            return "No cast voice for this speaker; alternates not requested.";
+        }
+
         TakeWork? best = BestMeaningPassingTake(takes, work.Qa.WindowSeconds);
         if (best is null)
         {
@@ -382,6 +387,8 @@ public sealed class AuditionService
             ex is MetaApiException or HttpRequestException or InvalidOperationException
             || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
+            // The request was reserved and sent before it failed, so it counts.
+            run.MetaCalls++;
             return $"Alternates request failed: {Truncate(ex.Message)}";
         }
 
@@ -392,7 +399,7 @@ public sealed class AuditionService
 
         HashSet<string> existingTexts = takes.Select(t => t.Attempt.Translation.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         int nextNumber = takes.Max(t => t.TakeNumber) + 1;
-        bool first = true;
+        bool tokensAttributed = false;
         foreach (string text in variants.Variants)
         {
             if (!existingTexts.Add(text.Trim()))
@@ -405,13 +412,19 @@ public sealed class AuditionService
                 break;
             }
 
-            QaAttemptReport attempt = SyntheticAttempt(work, run, nextNumber++, QaAttemptKind.Alternate, text, first ? variantsTokens : 0);
-            first = false;
-            int tokenAllocation = first ? variantsTokens : 0;
-            take.Cast = work.Cast;
+            // The single variants call's tokens ride on the first alternate take created.
+            int tokenAllocation = tokensAttributed ? 0 : variantsTokens;
             QaAttemptReport attempt = SyntheticAttempt(work, run, nextNumber++, QaAttemptKind.Alternate, text, tokenAllocation);
+            tokensAttributed = true;
+            TakeWork take = await ResolveMeaningAsync(work.Segment, attempt, run, cancellationToken).ConfigureAwait(false);
+            take.Cast = work.Cast;
             await SynthesizeAsync(take, run, cancellationToken).ConfigureAwait(false);
             takes.Add(take);
+        }
+
+        if (!tokensAttributed && variantsTokens > 0)
+        {
+            return $"Alternates request returned only duplicate texts; its {variantsTokens} tokens are counted at run level only.";
         }
 
         return null;
@@ -437,7 +450,6 @@ public sealed class AuditionService
         var take = new TakeWork(attempt)
         {
             Cast = work.Cast,
-            SpeedFactor = SpeedVariantFactor,
         };
         // The text passed the gate already; carry the verdict with zero new tokens.
         take.ApplyMeaning(MeaningVerdict.Pass, best.MeaningIssues, best.MeaningExplanation, 0);
@@ -448,6 +460,8 @@ public sealed class AuditionService
             return take.Note;
         }
 
+        // Labeled only once the take will actually be synthesized at the factor.
+        take.SpeedFactor = SpeedVariantFactor;
         await SynthesizeAsync(take, run, cancellationToken, SpeedVariantFactor).ConfigureAwait(false);
         takes.Add(take);
         return null;

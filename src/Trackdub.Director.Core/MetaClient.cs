@@ -217,8 +217,9 @@ public sealed class MetaClient : IDisposable
     /// up to <see cref="VariantsRequest.Count"/> variants of the reference translation,
     /// varying phrasing and length while preserving all names, numbers, and meaning.
     /// Always sends reasoning_effort "low" and the default chat model (muse-spark-1.1),
-    /// matching the translation lane's probe-verified shape. The response must be strict
-    /// JSON {"variants":[...]}; malformed output fails closed with <see cref="MetaApiException"/>.
+    /// matching the translation lane's probe-verified shape. The response must contain
+    /// a JSON object {"variants":[...]} with only string members; output without one
+    /// fails closed with <see cref="MetaApiException"/>.
     /// Variants that are blank or repeat the reference text are dropped, never returned.
     /// </summary>
     public async Task<VariantsCompletionResult> TranslateVariantsAsync(VariantsRequest request, CancellationToken cancellationToken = default)
@@ -282,8 +283,12 @@ public sealed class MetaClient : IDisposable
                 throw new MetaApiException($"Unexpected variants response shape: {Truncate(rawBody)}");
             }
 
+            if (variants.EnumerateArray().Any(v => v.ValueKind != JsonValueKind.String))
+            {
+                throw new MetaApiException($"Variants response elements must be strings: {Truncate(rawBody)}");
+            }
+
             return variants.EnumerateArray()
-                .Where(v => v.ValueKind == JsonValueKind.String)
                 .Select(v => v.GetString()!.Trim())
                 .Where(v => v.Length > 0 && !string.Equals(v, referenceTranslation.Trim(), StringComparison.OrdinalIgnoreCase))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
