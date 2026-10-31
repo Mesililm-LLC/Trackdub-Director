@@ -27,18 +27,23 @@ static async Task<int> RunAsync(string[] args)
         "translate" => await RunTranslateAsync(args[1..]).ConfigureAwait(false),
         "models" => await RunModelsAsync(args[1..]).ConfigureAwait(false),
         "qa" => await QaCli.RunAsync(args[1..]).ConfigureAwait(false),
-        _ => RunOfflineCommand(verb, args),
+        _ => await RunEvidenceCommandAsync(verb, args).ConfigureAwait(false),
     };
 }
 
-static int RunOfflineCommand(string verb, string[] args)
+static async Task<int> RunEvidenceCommandAsync(string verb, string[] args)
 {
-    return verb == "sign-shot" ? SignShotCli.Run(args[1..]) : UnknownCommand(args[0]);
+    return verb switch
+    {
+        "sign-shot" => SignShotCli.Run(args[1..]),
+        "meaning-eval" => await MeaningEvalCli.RunAsync(args[1..]).ConfigureAwait(false),
+        _ => UnknownCommand(args[0]),
+    };
 }
 
 static int UnknownCommand(string raw)
 {
-    Console.Error.WriteLine($"Unknown command '{raw}'. Expected 'smoke', 'translate', 'models', 'qa', or 'sign-shot'.");
+    Console.Error.WriteLine($"Unknown command '{raw}'. Expected 'smoke', 'translate', 'models', 'qa', 'sign-shot', or 'meaning-eval'.");
     PrintUsage();
     return 1;
 }
@@ -240,6 +245,7 @@ static void PrintUsage()
     Console.WriteLine("  models     List models available to this account (GET /models).");
     Console.WriteLine("  qa         Translate + timing QA loop (bounce-back revisions with report).");
     Console.WriteLine("  sign-shot  Extend a localised sign frame across a shot, gated on the shot being static.");
+    Console.WriteLine("  meaning-eval  Score the meaning gate on labeled cases (catch rate, false alarms).");
     Console.WriteLine();
     Console.WriteLine("Options:");
     Console.WriteLine("  -h, --help   Show help.");

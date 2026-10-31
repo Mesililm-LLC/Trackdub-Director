@@ -73,6 +73,54 @@ voa10, candidates that passed timing and failed meaning number **0 of 12**
 (attempt level, 0%; segment level, 0 of 12 first candidates). The meaning gate
 caught nothing on this material in this run; its cost below is real regardless.
 
+### Meaning gate under timing pressure (70% windows, branch `feat/meaning-gate-eval`)
+
+Report: `samples/meaning-eval/qa-report-pressure-70.json` (2026-10-31).
+Input: `samples/meaning-eval/pressure-segments.json`, all 20 lines of voa10,
+voa10-scale and sample-8 with every `duration_seconds` multiplied by 0.7 and
+rounded to 0.01 s (derivation in `samples/meaning-eval/NOTES.md`). The windows
+were tightened on purpose, to stand in for a faster original performance.
+Same uniform config: en→es, max_attempts 3, tolerance 0.10, CPS 15,
+reasoning_effort low.
+
+- Timing: first-pass **7/20 (35%)**, final **20/20**, **16** revisions.
+- Attempts **36**: meaning-evaluated **23**, NotEvaluated **13**, errors **0**.
+- **Catches (timing Pass, meaning Fail): 3 of 23 evaluated attempts, on 2 of
+  20 lines.** Without the gate, a timing-only loop would have shipped the
+  first timing-passing candidate on both:
+  - seg-006 "Where are we shooting tomorrow?" → "¿Rodamos mañana?" (asks
+    *whether*, not *where*), then → "¿Dónde rodamos?" ('tomorrow' dropped).
+  - seg-007 "Thank you for joining us today." → "Gracias todos" (reason for
+    the thanks dropped).
+- Known gap, stated: the gate judges meaning, not fluency. Under this
+  pressure it passed "Dónde film mañana?" (seg-006, ungrammatical, English
+  loanword) and "Gracias x hoy" (seg-007, text-message shorthand) as
+  meaning-preserving. Nothing in the pipeline gates grammar or register fit.
+- Tokens: **36,944** total (11,046 prompt + 25,898 completion), of which
+  meaning **15,375**.
+
+### Meaning gate on labeled cases (seeded eval, branch `feat/meaning-gate-eval`)
+
+Report: `samples/meaning-eval/meaning-eval-report.json` (2026-10-31), from
+`trackdub-director meaning-eval` over `samples/meaning-eval/cases.json`: the
+same `CheckMeaningAsync` call the QA loop makes, one call per case.
+
+- **40 cases** on 16 of the 20 source lines above: **16 clean** translations
+  (including idiomatic and register changes such as "¡Hasta pronto!" and
+  formal "Le veremos") and **24 seeded defects** across 8 types.
+- **Caught 24/24 (recall 100%); false alarms 0/16 (false-positive rate 0%);
+  API errors 0.** By type: negation 4/4, number 3/3, named entity 3/3, role
+  swap 3/3, dropped content 4/4, added content 2/2, modality 3/3, time 2/2.
+- Every catch's issue text names the planted defect (checked case by case).
+- Limits, stated: the set was written for this eval (by Claude, labels by
+  construction), the defects are clear-cut, and 40 cases is small. A perfect
+  score here is a floor check that the gate sees material errors, not an
+  estimate of its accuracy on subtle or borderline changes. `seeded-14`
+  ("¿Rodamos mañana?") is a real compression from the pressure run above;
+  `seeded-15` is that run's failed "Gracias todos" attempt, edited to
+  "Gracias a todos." so the case tests the dropped reason, not the grammar.
+- Tokens: **24,440** across **40** Meta calls.
+
 ## Token usage and call counts per lane (re-added from the named reports)
 
 ### Translation / QA — voa10-scale (qa-report-scale.json)

@@ -41,8 +41,22 @@ Every figure comes from a report file in this repo; method in
 - **Measured audio:** the audition lane rejected a take that measured 2.46 s
   against a 2.2 s window and cast the 2.32 s take; in another run it refused
   to cast a line whose only take ran 1.39 s against a 1.32 s ceiling.
-- **Meaning gate:** 0 catches in 12 evaluated candidates on this material.
-  It ran and cost tokens on every one; it found nothing to stop here.
+- **Meaning gate, real timing:** 0 catches in 12 evaluated candidates on
+  these clips. It ran and cost tokens on every one; it found nothing to stop.
+- **Meaning gate under pressure:** with every window tightened to 70% (a
+  stand-in for a faster original performance), the timing loop had to
+  compress hard, and the meaning gate stopped 3 of 23 timing-passing
+  candidates on 2 of 20 lines. A timing-only loop would have shipped "¿Rodamos
+  mañana?" ("are we shooting tomorrow?") for "Where are we shooting
+  tomorrow?". Known gap: it judges meaning, not grammar, and passed
+  ungrammatical shorthand such as "Gracias x hoy"
+  (`samples/meaning-eval/qa-report-pressure-70.json`).
+- **Meaning gate on labeled cases:** caught 24 of 24 seeded errors
+  (negation, numbers, names, role swaps, dropped or added content, modality,
+  time) with 0 false alarms on 16 clean translations, including idiomatic and
+  formal-register ones. The 40-case set was written for this eval, so treat
+  it as a check that the gate sees clear material errors, not as accuracy on
+  real dubs (`samples/meaning-eval/meaning-eval-report.json`).
 - **Sign localisation:** 3 of 3 frames repainted COFFEE SHOP to CAFETERÍA
   with an outside-box pixel difference of 0.
 - **Video-rate sign:** the static-shot gate checked all 260 frames of the
@@ -52,7 +66,7 @@ Every figure comes from a report file in this repo; method in
   frame (`samples/voa10/sign-shot-report.json`). Starting the window one
   frame early takes in the previous shot (box SSIM 0.28), and the gate
   refuses and writes no video (`samples/voa10/sign-shot-refused-report.json`).
-- **Tests:** 246 .NET test cases discovered (248 executed; one theory over
+- **Tests:** 259 .NET test cases discovered (261 executed; one theory over
   record-typed data is discovered as a single case) and 11 web tests.
 
 ## Adoption
@@ -82,7 +96,7 @@ src/Trackdub.Director.Server/    ASP.NET Core minimal API referencing Core (see 
                                   Serves the prebuilt web UI from wwwroot;
                                   no key required to start; key only gates live endpoints.
 src/Trackdub.Director.Cli/       Console app (trackdub-director):
-                                  smoke / translate / models / qa / sign-shot.
+                                  smoke / translate / models / qa / sign-shot / meaning-eval.
 web/                             React + Vite + TypeScript frontend. One screen:
                                   header (key status, model, QA summary), line list with
                                   per-line verdicts and expandable attempts, and Run Translate /
@@ -301,7 +315,7 @@ Frontend: one Vitest smoke test rendering the line list from a mocked API respon
 Trackdub.Director.slnx
 src/Trackdub.Director.Core/    Class library: Meta Model API client, translation, duration estimator, QA loop
 src/Trackdub.Director.Server/  ASP.NET Core host exposing Core over HTTP + serving the built frontend from wwwroot
-src/Trackdub.Director.Cli/     Console app: smoke / translate / models / qa / sign-shot subcommands
+src/Trackdub.Director.Cli/     Console app: smoke / translate / models / qa / sign-shot / meaning-eval subcommands
 web/                           React + Vite + TypeScript frontend (one screen)
 tests/Trackdub.Director.Tests/ xUnit tests + server endpoint tests
 samples/segments.json           8-line sample input with duration_seconds for the qa command
@@ -332,6 +346,22 @@ means refused. The report records per-frame SSIM and largest block shift, the fi
 and the largest outside-box pixel difference, counted on decoded frames
 before the lossy h264 encode.
 
+## Meaning eval
+
+`meaning-eval` runs the meaning gate (the same call the QA loop makes) over
+labeled cases and reports catches, misses, false alarms, recall, and
+false-positive rate. A case the gate could not judge (API error) counts in
+neither rate.
+
+```bash
+dotnet run --project src/Trackdub.Director.Cli -- meaning-eval \
+  --input samples/meaning-eval/cases.json --output meaning-eval-report.json
+```
+
+Cases are `[{ id, source_text, candidate, expected: "Pass"|"Fail", error_type?, note? }]`.
+`samples/meaning-eval/NOTES.md` describes the shipped case set and the 70%
+pressure dataset.
+
 ## Honest history
 
 All dates are 2026; every commit is in this repository's history.
@@ -347,4 +377,6 @@ All dates are 2026; every commit is in this repository's history.
   gated multi-take selection.
 - Oct 31: Visual localisation (crop-edit-composite with `muse-image-1.0`),
   audition alternates and speed variant, uniform-config scale reports,
-  prebuilt web bundle, static-shot gate for video-rate sign localisation.
+  prebuilt web bundle, static-shot gate for video-rate sign localisation,
+  meaning-gate measurement (70% pressure run and `meaning-eval` over 40
+  labeled cases).

@@ -1,0 +1,102 @@
+[
+  {
+    "id": "voa10-001",
+    "text": "Hi, Ashley.",
+    "duration_seconds": 0.84
+  },
+  {
+    "id": "voa10-002",
+    "text": "Anna, Which coffee shop? There are three coffee shops.",
+    "duration_seconds": 3.08
+  },
+  {
+    "id": "voa10-003",
+    "text": "Okay, my apartment is across from a big department store.",
+    "duration_seconds": 3.08
+  },
+  {
+    "id": "voa10-004",
+    "text": "A big department store? Ah, I see it!",
+    "duration_seconds": 2.52
+  },
+  {
+    "id": "voa10-005",
+    "text": "Okay! Bye, Ashley. See you soon!",
+    "duration_seconds": 1.54
+  },
+  {
+    "id": "voa10-006",
+    "text": "Okay. See you soon.",
+    "duration_seconds": 1.33
+  },
+  {
+    "id": "fpc-001",
+    "text": "Hi Ashley!",
+    "duration_seconds": 0.84
+  },
+  {
+    "id": "fpc-002",
+    "text": "Hi Anna! I'm coming to your apartment. Where is your apartment?",
+    "duration_seconds": 2.94
+  },
+  {
+    "id": "fpc-003",
+    "text": "My apartment is near the Columbia Heights Metro.",
+    "duration_seconds": 3.57
+  },
+  {
+    "id": "meet-001",
+    "text": "Ashley! Ashley! Ashley! Over here! It's Anna! It's Anna! Hi!",
+    "duration_seconds": 10.78
+  },
+  {
+    "id": "meet-002",
+    "text": "I love having my friends over. Come on!",
+    "duration_seconds": 2.94
+  },
+  {
+    "id": "meet-003",
+    "text": "Great!",
+    "duration_seconds": 0.84
+  },
+  {
+    "id": "seg-001",
+    "text": "The director checks every line before it reaches the audience.",
+    "duration_seconds": 3.22
+  },
+  {
+    "id": "seg-002",
+    "text": "We need one more take.",
+    "duration_seconds": 0.98
+  },
+  {
+    "id": "seg-003",
+    "text": "Action!",
+    "duration_seconds": 0.42
+  },
+  {
+    "id": "seg-004",
+    "text": "That was perfect. Let us move on.",
+    "duration_seconds": 1.68
+  },
+  {
+    "id": "seg-005",
+    "text": "Quiet on set, please.",
+    "duration_seconds": 0.7
+  },
+  {
+    "id": "seg-006",
+    "text": "Where are we shooting tomorrow?",
+    "duration_seconds": 1.12
+  },
+  {
+    "id": "seg-007",
+    "text": "Thank you for joining us today.",
+    "duration_seconds": 0.84
+  },
+  {
+    "id": "seg-008",
+    "text": "We will see you on the next stage.",
+    "duration_seconds": 1.4
+  }
+]

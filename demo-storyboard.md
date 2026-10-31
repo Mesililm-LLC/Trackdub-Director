@@ -7,8 +7,11 @@ Rules carried from the Participant Guide and the asset spec:
   Beat 1 does this on screen, in text.
 - No "Llama" wording anywhere. The models are Muse Spark, SAM 3.1,
   Muse Image, Muse Voice Transcribe.
-- No catch-rate claim: the uniform scale run found 0 of 12 timing-pass /
-  meaning-fail candidates. The demo says so (Beat 8).
+- Meaning-gate claims only as measured, each with its condition: 0 catches
+  in 12 on the real windows; 3 catches in 23 checks (2 of 20 lines) with
+  windows tightened to 70%; 24/24 seeded errors caught, 0/16 false alarms,
+  on a 40-case set written for the eval. Never present the seeded score as
+  accuracy on real dubs, and never omit the fluency gap.
 - Video-rate sign claim only for the coffee-shop shot, and only with its
   reason: the camera is static, and the static-shot gate verified it
   (`samples/voa10/sign-shot-report.json`: 260 frames, mean SSIM min 0.9864,
@@ -120,9 +123,12 @@ Visual: metrics snapshot scrolling (test snapshot, per-lane totals),
 then the end card.
 
 Voiceover:
-"Honest numbers: 246 automated tests. Across twelve uniform segments,
-the meaning gate caught zero silent failures on this material, and the
-snapshot in the repo says exactly that. The gates cost about 850 tokens
+"Honest numbers: 259 automated tests. On these clips at their real
+timing, the meaning gate caught nothing. Squeeze the timing to 70 percent
+and it stopped two lines that would have shipped with their meaning
+changed. On forty labeled cases it caught all twenty-four planted errors
+with no false alarms, on a set we wrote. It judges meaning, not grammar,
+and the repo says that too. The gates cost about 850 tokens
 per segment and leave a verdict for every line. Trackdub-Director: the
 dubbing tool that can say no, and show its work."
 

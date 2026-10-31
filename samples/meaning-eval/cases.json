@@ -1,0 +1,322 @@
+[
+  {
+    "id": "clean-01-voa10-002",
+    "source_text": "Anna, Which coffee shop? There are three coffee shops.",
+    "candidate": "Anna, ¿qué cafetería? Hay tres cafeterías.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-02-voa10-003",
+    "source_text": "Okay, my apartment is across from a big department store.",
+    "candidate": "Vale, mi apartamento está enfrente de unos grandes almacenes.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-03-voa10-004",
+    "source_text": "A big department store? Ah, I see it!",
+    "candidate": "¿Unos grandes almacenes? ¡Ah, ya lo veo!",
+    "expected": "Pass",
+    "error_type": null,
+    "note": "idiomatic 'ya lo veo'"
+  },
+  {
+    "id": "clean-04-voa10-005",
+    "source_text": "Okay! Bye, Ashley. See you soon!",
+    "candidate": "¡Vale! Adiós, Ashley. ¡Hasta pronto!",
+    "expected": "Pass",
+    "error_type": null,
+    "note": "idiomatic 'hasta pronto' for 'see you soon'"
+  },
+  {
+    "id": "clean-05-voa10-006",
+    "source_text": "Okay. See you soon.",
+    "candidate": "Vale. Nos vemos pronto.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-06-fpc-002",
+    "source_text": "Hi Anna! I'm coming to your apartment. Where is your apartment?",
+    "candidate": "¡Hola, Anna! Voy a tu apartamento. ¿Dónde está tu apartamento?",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-07-fpc-003",
+    "source_text": "My apartment is near the Columbia Heights Metro.",
+    "candidate": "Mi apartamento está cerca del metro de Columbia Heights.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-08-meet-002",
+    "source_text": "I love having my friends over. Come on!",
+    "candidate": "Me encanta recibir a mis amigos en casa. ¡Vamos!",
+    "expected": "Pass",
+    "error_type": null,
+    "note": "idiomatic 'recibir en casa' for 'having over'"
+  },
+  {
+    "id": "clean-09-seg-001",
+    "source_text": "The director checks every line before it reaches the audience.",
+    "candidate": "El director revisa cada frase antes de que llegue al público.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-10-seg-002",
+    "source_text": "We need one more take.",
+    "candidate": "Necesitamos una toma más.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-11-seg-003",
+    "source_text": "Action!",
+    "candidate": "¡Acción!",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-12-seg-004",
+    "source_text": "That was perfect. Let us move on.",
+    "candidate": "Eso estuvo perfecto. Sigamos.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": "'Sigamos' for 'let us move on'"
+  },
+  {
+    "id": "clean-13-seg-005",
+    "source_text": "Quiet on set, please.",
+    "candidate": "Silencio en el set, por favor.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-14-seg-006",
+    "source_text": "Where are we shooting tomorrow?",
+    "candidate": "¿Dónde rodamos mañana?",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-15-seg-007",
+    "source_text": "Thank you for joining us today.",
+    "candidate": "Gracias por acompañarnos hoy.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": null
+  },
+  {
+    "id": "clean-16-seg-008",
+    "source_text": "We will see you on the next stage.",
+    "candidate": "Le veremos en la próxima etapa.",
+    "expected": "Pass",
+    "error_type": null,
+    "note": "formal register (usted); validated register change in Stage B2"
+  },
+  {
+    "id": "seeded-01-seg-004",
+    "source_text": "That was perfect. Let us move on.",
+    "candidate": "Eso no estuvo perfecto. Sigamos.",
+    "expected": "Fail",
+    "error_type": "negation",
+    "note": "'perfect' negated"
+  },
+  {
+    "id": "seeded-02-meet-002",
+    "source_text": "I love having my friends over. Come on!",
+    "candidate": "No me gusta recibir a mis amigos en casa. ¡Vamos!",
+    "expected": "Fail",
+    "error_type": "negation",
+    "note": "'love' became 'don't like'"
+  },
+  {
+    "id": "seeded-03-voa10-004",
+    "source_text": "A big department store? Ah, I see it!",
+    "candidate": "¿Unos grandes almacenes? ¡Ah, no lo veo!",
+    "expected": "Fail",
+    "error_type": "negation",
+    "note": "'I see it' negated"
+  },
+  {
+    "id": "seeded-04-seg-001",
+    "source_text": "The director checks every line before it reaches the audience.",
+    "candidate": "El director no revisa ninguna frase antes de que llegue al público.",
+    "expected": "Fail",
+    "error_type": "negation",
+    "note": "'checks every line' became 'checks no line'"
+  },
+  {
+    "id": "seeded-05-voa10-002",
+    "source_text": "Anna, Which coffee shop? There are three coffee shops.",
+    "candidate": "Anna, ¿qué cafetería? Hay dos cafeterías.",
+    "expected": "Fail",
+    "error_type": "number",
+    "note": "three became two"
+  },
+  {
+    "id": "seeded-06-seg-002",
+    "source_text": "We need one more take.",
+    "candidate": "Necesitamos dos tomas más.",
+    "expected": "Fail",
+    "error_type": "number",
+    "note": "one more take became two"
+  },
+  {
+    "id": "seeded-07-seg-001",
+    "source_text": "The director checks every line before it reaches the audience.",
+    "candidate": "El director revisa algunas frases antes de que lleguen al público.",
+    "expected": "Fail",
+    "error_type": "number",
+    "note": "'every' became 'some'"
+  },
+  {
+    "id": "seeded-08-fpc-003",
+    "source_text": "My apartment is near the Columbia Heights Metro.",
+    "candidate": "Mi apartamento está cerca del metro de Dupont Circle.",
+    "expected": "Fail",
+    "error_type": "named_entity",
+    "note": "Columbia Heights became Dupont Circle"
+  },
+  {
+    "id": "seeded-09-voa10-005",
+    "source_text": "Okay! Bye, Ashley. See you soon!",
+    "candidate": "¡Vale! Adiós, Anna. ¡Hasta pronto!",
+    "expected": "Fail",
+    "error_type": "named_entity",
+    "note": "Ashley became Anna"
+  },
+  {
+    "id": "seeded-10-fpc-002",
+    "source_text": "Hi Anna! I'm coming to your apartment. Where is your apartment?",
+    "candidate": "¡Hola, Ashley! Voy a tu apartamento. ¿Dónde está tu apartamento?",
+    "expected": "Fail",
+    "error_type": "named_entity",
+    "note": "Anna became Ashley"
+  },
+  {
+    "id": "seeded-11-voa10-003",
+    "source_text": "Okay, my apartment is across from a big department store.",
+    "candidate": "Vale, tu apartamento está enfrente de unos grandes almacenes.",
+    "expected": "Fail",
+    "error_type": "role_swap",
+    "note": "'my apartment' became 'your apartment'"
+  },
+  {
+    "id": "seeded-12-seg-001",
+    "source_text": "The director checks every line before it reaches the audience.",
+    "candidate": "El público revisa cada frase antes de que llegue al director.",
+    "expected": "Fail",
+    "error_type": "role_swap",
+    "note": "director and audience swapped"
+  },
+  {
+    "id": "seeded-13-seg-008",
+    "source_text": "We will see you on the next stage.",
+    "candidate": "Nos verás en la próxima etapa.",
+    "expected": "Fail",
+    "error_type": "role_swap",
+    "note": "'we will see you' became 'you will see us'"
+  },
+  {
+    "id": "seeded-14-seg-006",
+    "source_text": "Where are we shooting tomorrow?",
+    "candidate": "¿Rodamos mañana?",
+    "expected": "Fail",
+    "error_type": "dropped_content",
+    "note": "'where' dropped; real compression from the 70% pressure run"
+  },
+  {
+    "id": "seeded-15-seg-007",
+    "source_text": "Thank you for joining us today.",
+    "candidate": "Gracias a todos.",
+    "expected": "Fail",
+    "error_type": "dropped_content",
+    "note": "reason for thanks dropped; real compression from the 70% pressure run (as 'Gracias todos')"
+  },
+  {
+    "id": "seeded-16-voa10-003",
+    "source_text": "Okay, my apartment is across from a big department store.",
+    "candidate": "Vale, mi apartamento está enfrente.",
+    "expected": "Fail",
+    "error_type": "dropped_content",
+    "note": "'a big department store' dropped"
+  },
+  {
+    "id": "seeded-17-fpc-002",
+    "source_text": "Hi Anna! I'm coming to your apartment. Where is your apartment?",
+    "candidate": "¡Hola, Anna! Voy a tu apartamento.",
+    "expected": "Fail",
+    "error_type": "dropped_content",
+    "note": "the question 'where is your apartment?' dropped"
+  },
+  {
+    "id": "seeded-18-seg-002",
+    "source_text": "We need one more take.",
+    "candidate": "Necesitamos una toma más antes de comer.",
+    "expected": "Fail",
+    "error_type": "added_content",
+    "note": "'before lunch' added"
+  },
+  {
+    "id": "seeded-19-voa10-006",
+    "source_text": "Okay. See you soon.",
+    "candidate": "Vale. Nos vemos pronto en el café.",
+    "expected": "Fail",
+    "error_type": "added_content",
+    "note": "'at the coffee shop' added"
+  },
+  {
+    "id": "seeded-20-seg-002",
+    "source_text": "We need one more take.",
+    "candidate": "Quizá podríamos hacer una toma más.",
+    "expected": "Fail",
+    "error_type": "modality",
+    "note": "'need' became 'maybe could'"
+  },
+  {
+    "id": "seeded-21-meet-002",
+    "source_text": "I love having my friends over. Come on!",
+    "candidate": "Tengo que recibir a mis amigos en casa. ¡Vamos!",
+    "expected": "Fail",
+    "error_type": "modality",
+    "note": "'love' became 'have to'"
+  },
+  {
+    "id": "seeded-22-seg-008",
+    "source_text": "We will see you on the next stage.",
+    "candidate": "Quizá le veamos en la próxima etapa.",
+    "expected": "Fail",
+    "error_type": "modality",
+    "note": "'will' became 'maybe'"
+  },
+  {
+    "id": "seeded-23-seg-006",
+    "source_text": "Where are we shooting tomorrow?",
+    "candidate": "¿Dónde rodamos hoy?",
+    "expected": "Fail",
+    "error_type": "time",
+    "note": "tomorrow became today"
+  },
+  {
+    "id": "seeded-24-seg-007",
+    "source_text": "Thank you for joining us today.",
+    "candidate": "Gracias por acompañarnos ayer.",
+    "expected": "Fail",
+    "error_type": "time",
+    "note": "today became yesterday"
+  }
+]
