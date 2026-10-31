@@ -403,9 +403,11 @@ public sealed class AuditionService
             return "No cast voice for this speaker; not synthesized.";
         }
 
-        if (run.ElevenLabsCapHit || run.MetaCapHit)
+        // Only the ElevenLabs cap stops synthesis. The Meta cap limits new meaning checks, so takes that already
+        // passed the gate must still be synthesized.
+        if (run.ElevenLabsCapHit)
         {
-            return "Run cap already hit; synthesis stopped.";
+            return "ElevenLabs cap already hit; synthesis stopped.";
         }
 
         if (run.ElevenLabsCharacters + take.Attempt.Translation.Length > MaxElevenLabsCharacters)
