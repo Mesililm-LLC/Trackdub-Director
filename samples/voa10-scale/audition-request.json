@@ -1,0 +1,42 @@
+{
+  "targetLanguage": "es",
+  "sourceLanguage": "en",
+  "segments": [
+    {
+      "duration_seconds": 1.2,
+      "speaker_id": "anna",
+      "id": "voa10-001",
+      "text": "Hi, Ashley."
+    },
+    {
+      "duration_seconds": 4.4,
+      "speaker_id": "ashley",
+      "id": "voa10-002",
+      "text": "Anna, Which coffee shop? There are three coffee shops."
+    },
+    {
+      "duration_seconds": 4.4,
+      "speaker_id": "anna",
+      "id": "voa10-003",
+      "text": "Okay, my apartment is across from a big department store."
+    },
+    {
+      "duration_seconds": 3.6,
+      "speaker_id": "ashley",
+      "id": "voa10-004",
+      "text": "A big department store? Ah, I see it!"
+    },
+    {
+      "duration_seconds": 2.2,
+      "speaker_id": "anna",
+      "id": "voa10-005",
+      "text": "Okay! Bye, Ashley. See you soon!"
+    },
+    {
+      "duration_seconds": 1.9,
+      "speaker_id": "ashley",
+      "id": "voa10-006",
+      "text": "Okay. See you soon."
+    }
+  ]
+}

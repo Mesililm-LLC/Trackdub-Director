@@ -1,0 +1,244 @@
+{
+  "source_language": "en",
+  "target_language": "es",
+  "cast": [
+    {
+      "speaker_id": "anna",
+      "voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+      "voice_name": "Alice - Clear, Engaging Educator"
+    },
+    {
+      "speaker_id": "ashley",
+      "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+      "voice_name": "Bella - Professional, Bright, Warm"
+    }
+  ],
+  "segments": [
+    {
+      "id": "voa10-001",
+      "text": "Hi, Ashley.",
+      "speaker_id": "anna",
+      "cast_voice": {
+        "speaker_id": "anna",
+        "voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+        "voice_name": "Alice - Clear, Engaging Educator"
+      },
+      "window_seconds": 1.2,
+      "takes": [
+        {
+          "take_number": 1,
+          "kind": "Initial",
+          "text": "Hola, Ashley.",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Greeting to Ashley preserved with equivalent meaning in Spanish.",
+          "synthesized": true,
+          "measured_seconds": 1.1145625,
+          "window_seconds": 1.2,
+          "timing_verdict": "Pass",
+          "is_winner": true,
+          "audio_file_name": "voa10-001-take1.wav",
+          "translation_tokens": 147,
+          "meaning_tokens": 492,
+          "elevenlabs_characters": 13
+        }
+      ],
+      "cast": true,
+      "winner_take_number": 1,
+      "winner_file_name": "voa10-001-take1.wav"
+    },
+    {
+      "id": "voa10-002",
+      "text": "Anna, Which coffee shop? There are three coffee shops.",
+      "speaker_id": "ashley",
+      "cast_voice": {
+        "speaker_id": "ashley",
+        "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+        "voice_name": "Bella - Professional, Bright, Warm"
+      },
+      "window_seconds": 4.4,
+      "takes": [
+        {
+          "take_number": 1,
+          "kind": "Initial",
+          "text": "Anna, ¿cuál cafetería? Hay tres cafeterías.",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Candidate directly translates source: asks which coffee shop and states there are three, preserving subject, quantity, and intent.",
+          "synthesized": true,
+          "measured_seconds": 3.1579375,
+          "window_seconds": 4.4,
+          "timing_verdict": "Pass",
+          "is_winner": true,
+          "audio_file_name": "voa10-002-take1.wav",
+          "translation_tokens": 278,
+          "meaning_tokens": 572,
+          "elevenlabs_characters": 43
+        }
+      ],
+      "cast": true,
+      "winner_take_number": 1,
+      "winner_file_name": "voa10-002-take1.wav"
+    },
+    {
+      "id": "voa10-003",
+      "text": "Okay, my apartment is across from a big department store.",
+      "speaker_id": "anna",
+      "cast_voice": {
+        "speaker_id": "anna",
+        "voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+        "voice_name": "Alice - Clear, Engaging Educator"
+      },
+      "window_seconds": 4.4,
+      "takes": [
+        {
+          "take_number": 1,
+          "kind": "Initial",
+          "text": "Vale, mi apartamento está enfrente de unos grandes almacenes.",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Candidate preserves subject (my apartment), location relation (across from / enfrente de), and object (big department store / unos grandes almacenes) with no change in polarity or entities.",
+          "synthesized": true,
+          "measured_seconds": 3.947375,
+          "window_seconds": 4.4,
+          "timing_verdict": "Pass",
+          "is_winner": true,
+          "audio_file_name": "voa10-003-take1.wav",
+          "translation_tokens": 329,
+          "meaning_tokens": 592,
+          "elevenlabs_characters": 61
+        }
+      ],
+      "cast": true,
+      "winner_take_number": 1,
+      "winner_file_name": "voa10-003-take1.wav"
+    },
+    {
+      "id": "voa10-004",
+      "text": "A big department store? Ah, I see it!",
+      "speaker_id": "ashley",
+      "cast_voice": {
+        "speaker_id": "ashley",
+        "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+        "voice_name": "Bella - Professional, Bright, Warm"
+      },
+      "window_seconds": 3.6,
+      "takes": [
+        {
+          "take_number": 1,
+          "kind": "Initial",
+          "text": "¿Una tienda departamental grande? ¡Ah, la veo!",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Candidate preserves both parts: questioning a big department store and exclaiming that it is seen, with no material meaning added or lost.",
+          "synthesized": true,
+          "measured_seconds": 2.9256875,
+          "window_seconds": 3.6,
+          "timing_verdict": "Pass",
+          "is_winner": true,
+          "audio_file_name": "voa10-004-take1.wav",
+          "translation_tokens": 227,
+          "meaning_tokens": 588,
+          "elevenlabs_characters": 46
+        }
+      ],
+      "cast": true,
+      "winner_take_number": 1,
+      "winner_file_name": "voa10-004-take1.wav"
+    },
+    {
+      "id": "voa10-005",
+      "text": "Okay! Bye, Ashley. See you soon!",
+      "speaker_id": "anna",
+      "cast_voice": {
+        "speaker_id": "anna",
+        "voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+        "voice_name": "Alice - Clear, Engaging Educator"
+      },
+      "window_seconds": 2.2,
+      "takes": [
+        {
+          "take_number": 1,
+          "kind": "Initial",
+          "text": "¡Ok! ¡Adiós, Ashley! ¡Nos vemos pronto!",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Candidate accurately preserves all material meaning: farewell to named entity Ashley and statement of seeing each other soon, with natural idiomatic translation.",
+          "synthesized": true,
+          "measured_seconds": 2.4613125,
+          "window_seconds": 2.2,
+          "timing_verdict": "Fail",
+          "is_winner": false,
+          "audio_file_name": "voa10-005-take1.wav",
+          "translation_tokens": 213,
+          "meaning_tokens": 544,
+          "elevenlabs_characters": 39
+        },
+        {
+          "take_number": 2,
+          "kind": "Revision",
+          "text": "¡Adiós, Ashley! ¡Nos vemos pronto!",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Candidate preserves the farewell to Ashley and the 'see you soon' intent; omission of filler 'Okay!' does not alter material meaning.",
+          "synthesized": true,
+          "measured_seconds": 2.322,
+          "window_seconds": 2.2,
+          "timing_verdict": "Pass",
+          "is_winner": true,
+          "audio_file_name": "voa10-005-take2.wav",
+          "translation_tokens": 643,
+          "meaning_tokens": 583,
+          "elevenlabs_characters": 34
+        }
+      ],
+      "cast": true,
+      "winner_take_number": 2,
+      "winner_file_name": "voa10-005-take2.wav"
+    },
+    {
+      "id": "voa10-006",
+      "text": "Okay. See you soon.",
+      "speaker_id": "ashley",
+      "cast_voice": {
+        "speaker_id": "ashley",
+        "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+        "voice_name": "Bella - Professional, Bright, Warm"
+      },
+      "window_seconds": 1.9,
+      "takes": [
+        {
+          "take_number": 1,
+          "kind": "Initial",
+          "text": "Vale. Nos vemos pronto.",
+          "meaning_verdict": "Pass",
+          "meaning_issues": [],
+          "meaning_explanation": "Candidate 'Vale. Nos vemos pronto.' accurately conveys 'Okay. See you soon.' with no material meaning loss.",
+          "synthesized": true,
+          "measured_seconds": 1.4860625,
+          "window_seconds": 1.9,
+          "timing_verdict": "Pass",
+          "is_winner": true,
+          "audio_file_name": "voa10-006-take1.wav",
+          "translation_tokens": 254,
+          "meaning_tokens": 513,
+          "elevenlabs_characters": 23
+        }
+      ],
+      "cast": true,
+      "winner_take_number": 1,
+      "winner_file_name": "voa10-006-take1.wav"
+    }
+  ],
+  "totals": {
+    "total_segments": 6,
+    "lines_cast": 6,
+    "takes_synthesized": 7,
+    "meta_calls": 14,
+    "translation_tokens": 2091,
+    "meaning_tokens": 3884,
+    "elevenlabs_characters": 259,
+    "elevenlabs_cap_hit": false,
+    "meta_cap_hit": false
+  }
+}

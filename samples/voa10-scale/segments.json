@@ -1,0 +1,32 @@
+[
+  {
+    "id": "fpc-001",
+    "text": "Hi Ashley!",
+    "duration_seconds": 1.2
+  },
+  {
+    "id": "fpc-002",
+    "text": "Hi Anna! I'm coming to your apartment. Where is your apartment?",
+    "duration_seconds": 4.2
+  },
+  {
+    "id": "fpc-003",
+    "text": "My apartment is near the Columbia Heights Metro.",
+    "duration_seconds": 5.1
+  },
+  {
+    "id": "meet-001",
+    "text": "Ashley! Ashley! Ashley! Over here! It's Anna! It's Anna! Hi!",
+    "duration_seconds": 15.4
+  },
+  {
+    "id": "meet-002",
+    "text": "I love having my friends over. Come on!",
+    "duration_seconds": 4.2
+  },
+  {
+    "id": "meet-003",
+    "text": "Great!",
+    "duration_seconds": 1.2
+  }
+]
