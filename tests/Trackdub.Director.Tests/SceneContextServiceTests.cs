@@ -832,4 +832,34 @@ public sealed class SceneContextServiceTests
         Assert.False(parsed.IsMalformed);
         Assert.Empty(parsed.Regions);
     }
+
+    private static HttpResponseMessage UpstreamError() => new(HttpStatusCode.InternalServerError)
+    {
+        Content = new StringContent("""{"error":{"message":"upstream down"}}""", Encoding.UTF8, "application/json"),
+    };
+
+    [Theory]
+    [InlineData("concept")]
+    [InlineData("vision")]
+    [InlineData("transport")]
+    public async Task Upstream_failure_fails_the_segment_without_defaulting(string mode)
+    {
+        using var auth = FakeAuth();
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler = mode == "transport"
+            ? (_, _) => throw new HttpRequestException("connection reset")
+            : (_, _) => Task.FromResult(UpstreamError());
+        var (service, http) = BuildService(handler);
+        using (http)
+        {
+            SceneSegmentInput input = mode == "vision"
+                ? new SceneSegmentInput("seg-001", "Action!", FrameDataUrl, VisionEnrichment: true)
+                : new SceneSegmentInput("seg-001", "Action!", FrameDataUrl, ["red rectangle"]);
+
+            SceneContextBatch batch = await service.RunAsync([input]);
+
+            SceneSegmentResult result = Assert.Single(batch.Segments);
+            AssertFailed(result);
+            Assert.Contains(mode == "transport" ? "connection reset" : "HTTP 500", result.Error, StringComparison.Ordinal);
+        }
+    }
 }
