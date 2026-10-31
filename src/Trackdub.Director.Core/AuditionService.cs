@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Trackdub.Director.Core;
 
 /// <summary>
@@ -7,11 +10,13 @@ namespace Trackdub.Director.Core;
 /// A take wins only when meaning Pass AND measured-audio timing Pass; lines
 /// with no winning take stay uncast with every verdict preserved.
 ///
-/// Candidate generation runs the whole batch through <see cref="QaService"/>
-/// first (translation lane + revision loop, existing config). Candidates
-/// whose meaning was deliberately skipped by QA timing (NotEvaluated) are
-/// meaning-checked here via <see cref="MetaClient.CheckMeaningAsync"/> before
-/// any synthesis, so every synthesized text carries a fresh meaning verdict.
+/// Candidate generation runs each segment through <see cref="QaService"/>
+/// (translation lane + revision loop, existing config). Every Meta request in
+/// the run is charged to one <see cref="CallBudget"/>; a segment is only sent to
+/// QA when the budget can cover its worst case, so a batch stops at the cap
+/// with the remaining segments reported uncast. Candidates whose meaning was
+/// deliberately skipped by QA timing (NotEvaluated) are meaning-checked here
+/// before any synthesis, so every synthesized text carries a fresh meaning verdict.
 /// </summary>
 public sealed class AuditionService
 {
@@ -20,6 +25,7 @@ public sealed class AuditionService
     public const int MaxMetaCalls = 40;
 
     private const string SpanishCapableModelId = "eleven_multilingual_v2";
+    private const int MaxStemLength = 64;
 
     private readonly MetaClient _client;
     private readonly ITtsProvider _tts;
@@ -60,18 +66,19 @@ public sealed class AuditionService
         // calls to every lane.
         _tts.EnsureConfigured();
 
-        var run = new RunState();
+        var budget = new CallBudget(MaxMetaCalls);
+        var run = new RunState(budget, _client.WithBudget(budget));
         AuditionCastVoice[] cast = await CastAsync(cancellationToken).ConfigureAwait(false);
         var castBySpeaker = cast.ToDictionary(c => c.SpeakerId, StringComparer.OrdinalIgnoreCase);
 
-        QaReport qaReport = await GenerateCandidatesAsync(segments, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false);
-        var qaById = qaReport.Segments.ToDictionary(s => s.Id, StringComparer.Ordinal);
+        Dictionary<string, QaSegmentReport> qaById = await GenerateCandidatesAsync(segments, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false);
 
         var segmentReports = new List<AuditionSegmentReport>(segments.Count);
         foreach (AuditionSegmentInput segment in segments)
         {
-            QaSegmentReport qa = qaById[segment.Id];
-            segmentReports.Add(await ProcessSegmentAsync(segment, qa, castBySpeaker, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false));
+            segmentReports.Add(qaById.TryGetValue(segment.Id, out QaSegmentReport? qa)
+                ? await ProcessSegmentAsync(segment, qa, castBySpeaker, sourceLanguage, targetLanguage, run, cancellationToken).ConfigureAwait(false)
+                : SkippedSegmentReport(segment, castBySpeaker, sourceLanguage));
         }
 
         var totals = new AuditionTotals(
@@ -119,40 +126,63 @@ public sealed class AuditionService
             || models.Contains(SpanishCapableModelId, StringComparer.Ordinal);
     }
 
-    private async Task<QaReport> GenerateCandidatesAsync(
+    // Worst case for one segment: an initial translation and up to MaxAttempts
+    // revisions, each with a meaning check, plus a meaning check for every candidate
+    // that QA left unevaluated.
+    private int WorstCaseCallsPerSegment() => 2 * (_options.MaxAttempts + 1) + MaxTakesPerSegment;
+
+    private async Task<Dictionary<string, QaSegmentReport>> GenerateCandidatesAsync(
         IReadOnlyList<AuditionSegmentInput> segments,
         string sourceLanguage,
         string targetLanguage,
         RunState run,
         CancellationToken cancellationToken)
     {
-        var qaSegments = segments.Select(s => new QaSegmentInput(s.Id, s.Text, s.DurationSeconds)).ToArray();
-        QaReport report = await new QaService(_client, _options)
-            .RunAsync(qaSegments, sourceLanguage, targetLanguage, cancellationToken)
-            .ConfigureAwait(false);
+        int reserve = WorstCaseCallsPerSegment();
+        var qaById = new Dictionary<string, QaSegmentReport>(StringComparer.Ordinal);
+        foreach (AuditionSegmentInput segment in segments)
+        {
+            if (run.Budget.Remaining < reserve)
+            {
+                run.MetaCapHit = true;
+                break;
+            }
 
+            QaSegmentReport qa;
+            try
+            {
+                QaReport report = await new QaService(run.Client, _options)
+                    .RunAsync([new QaSegmentInput(segment.Id, segment.Text, segment.DurationSeconds)], sourceLanguage, targetLanguage, cancellationToken)
+                    .ConfigureAwait(false);
+                qa = report.Segments.Single();
+            }
+            catch (MetaBudgetExhaustedException)
+            {
+                run.MetaCapHit = true;
+                break;
+            }
+
+            AccountQaCalls(qa, run);
+            qaById[segment.Id] = qa;
+        }
+
+        return qaById;
+    }
+
+    private static void AccountQaCalls(QaSegmentReport segment, RunState run)
+    {
         // Account every Meta call QA made: one translate/revise call per
         // attempt plus one meaning call per evaluated attempt.
-        foreach (QaSegmentReport segment in report.Segments)
+        foreach (QaAttemptReport attempt in AllAttempts(segment))
         {
-            foreach (QaAttemptReport attempt in AllAttempts(segment))
+            run.MetaCalls++;
+            run.TranslationTokens += attempt.TotalTokens;
+            run.MeaningTokens += attempt.MeaningTotalTokens;
+            if (attempt.MeaningVerdict != MeaningVerdict.NotEvaluated)
             {
                 run.MetaCalls++;
-                run.TranslationTokens += attempt.TotalTokens;
-                run.MeaningTokens += attempt.MeaningTotalTokens;
-                if (attempt.MeaningVerdict != MeaningVerdict.NotEvaluated)
-                {
-                    run.MetaCalls++;
-                }
             }
         }
-
-        if (run.MetaCalls >= MaxMetaCalls)
-        {
-            run.MetaCapHit = true;
-        }
-
-        return report;
     }
 
     private static IEnumerable<QaAttemptReport> AllAttempts(QaSegmentReport segment)
@@ -162,6 +192,53 @@ public sealed class AuditionService
         {
             yield return revision;
         }
+    }
+
+    // Keeps at most MaxTakesPerSegment attempts: the first ones, as before. A passing attempt
+    // beyond that window replaces the last kept attempt that did not pass, so a passing final
+    // revision is never dropped for a failure. Kept attempts keep their original positions.
+    private static QaAttemptReport[] SelectCandidates(QaSegmentReport segment)
+    {
+        List<QaAttemptReport> all = AllAttempts(segment).ToList();
+        if (all.Count <= MaxTakesPerSegment)
+        {
+            return all.ToArray();
+        }
+
+        var kept = all.Take(MaxTakesPerSegment).ToList();
+        foreach (QaAttemptReport passing in all.Skip(MaxTakesPerSegment).Where(a => a.Verdict == QaVerdict.Pass))
+        {
+            int slot = kept.FindLastIndex(a => a.Verdict != QaVerdict.Pass);
+            if (slot < 0)
+            {
+                break;
+            }
+
+            kept[slot] = passing;
+        }
+
+        return kept.ToArray();
+    }
+
+    // A segment that never reached QA because the budget ran out. It is reported
+    // uncast, with no takes, rather than dropped from the batch.
+    private AuditionSegmentReport SkippedSegmentReport(
+        AuditionSegmentInput segment,
+        IReadOnlyDictionary<string, AuditionCastVoice> castBySpeaker,
+        string sourceLanguage)
+    {
+        double windowSeconds = QaService.ResolveWindowSeconds(
+            new QaSegmentInput(segment.Id, segment.Text, segment.DurationSeconds), _options, sourceLanguage);
+        return new AuditionSegmentReport(
+            segment.Id,
+            segment.Text,
+            NullIfBlank(segment.SpeakerId),
+            ResolveCastVoice(segment, castBySpeaker),
+            windowSeconds,
+            [],
+            Cast: false,
+            WinnerTakeNumber: null,
+            WinnerFileName: null);
     }
 
     private async Task<AuditionSegmentReport> ProcessSegmentAsync(
@@ -174,7 +251,7 @@ public sealed class AuditionService
         CancellationToken cancellationToken)
     {
         AuditionCastVoice? castVoice = ResolveCastVoice(segment, castBySpeaker);
-        QaAttemptReport[] candidates = AllAttempts(qa).Take(MaxTakesPerSegment).ToArray();
+        QaAttemptReport[] candidates = SelectCandidates(qa);
         var takes = new List<TakeWork>(candidates.Length);
 
         foreach (QaAttemptReport attempt in candidates)
@@ -229,9 +306,8 @@ public sealed class AuditionService
 
         // QA deliberately skipped this text (estimated timing failed). The
         // audition gate still needs a verdict before any synthesis decision.
-        if (run.MetaCapHit || run.MetaCalls + 1 > MaxMetaCalls)
+        if (run.MetaCapHit)
         {
-            run.MetaCapHit = true;
             work.MeaningVerdict = MeaningVerdict.NotEvaluated;
             return work;
         }
@@ -240,9 +316,15 @@ public sealed class AuditionService
         MeaningCheckResult meaning;
         try
         {
-            meaning = await _client.CheckMeaningAsync(
+            meaning = await run.Client.CheckMeaningAsync(
                 new MetaClient.MeaningCheckRequest(segment.Text, attempt.Translation, sourceLanguage, targetLanguage),
                 cancellationToken).ConfigureAwait(false);
+        }
+        catch (MetaBudgetExhaustedException)
+        {
+            run.MetaCapHit = true;
+            work.MeaningVerdict = MeaningVerdict.NotEvaluated;
+            return work;
         }
         catch (Exception ex) when (
             ex is MetaApiException or HttpRequestException or InvalidOperationException
@@ -341,6 +423,26 @@ public sealed class AuditionService
         return best;
     }
 
+    /// <summary>
+    /// File name for a winning take. Segment ids come from the request, so the stem keeps only
+    /// ASCII letters, digits, '-' and '_'. An id that had to change gets a short hash suffix, so
+    /// distinct ids cannot collapse onto one file.
+    /// </summary>
+    public static string TakeFileName(string segmentId, int takeNumber)
+    {
+        string stem = new(segmentId
+            .Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '_')
+            .Take(MaxStemLength)
+            .ToArray());
+        if (stem != segmentId)
+        {
+            byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(segmentId));
+            stem = $"{stem}-{Convert.ToHexString(digest, 0, 4).ToLowerInvariant()}";
+        }
+
+        return $"{stem}-take{takeNumber}.wav";
+    }
+
     private static string? NullIfBlank(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -359,6 +461,17 @@ public sealed class AuditionService
 
     private sealed class RunState
     {
+        public RunState(CallBudget budget, MetaClient client)
+        {
+            Budget = budget;
+            Client = client;
+        }
+
+        public CallBudget Budget { get; }
+
+        // Meta client that charges every request in this run to Budget.
+        public MetaClient Client { get; }
+
         public int MetaCalls;
         public int TranslationTokens;
         public int MeaningTokens;
@@ -401,7 +514,7 @@ public sealed class AuditionService
 
         public string FileName(string segmentId)
         {
-            return $"{segmentId}-take{TakeNumber}.wav";
+            return TakeFileName(segmentId, TakeNumber);
         }
 
         public AuditionTakeReport ToReport(TakeWork? winner, string segmentId)

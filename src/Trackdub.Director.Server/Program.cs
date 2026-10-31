@@ -18,7 +18,8 @@ builder.Services.AddSingleton(_ => new HttpClient(new HttpClientHandler()) { Tim
 builder.Services.AddTransient(sp => new MetaClient(sp.GetRequiredService<HttpClient>()));
 builder.Services.AddTransient<TranslationService>(sp => new TranslationService(sp.GetRequiredService<MetaClient>()));
 builder.Services.AddTransient<SceneContextService>(sp => new SceneContextService(sp.GetRequiredService<MetaClient>()));
-builder.Services.AddTransient<ITtsProvider>(sp => new ElevenLabsTtsProvider(sp.GetRequiredService<HttpClient>()));
+// One provider for the process: it owns a 120-second client sized for audio synthesis.
+builder.Services.AddSingleton<ITtsProvider>(_ => new ElevenLabsTtsProvider());
 
 // JSON: keep defaults but ensure case-insensitive reads and respect JsonPropertyName attributes
 builder.Services.ConfigureHttpJsonOptions(opts =>
@@ -448,13 +449,27 @@ public partial class Program
             AuditionTakeReport? winner = segment.Takes.FirstOrDefault(t => t.IsWinner);
             if (winner?.AudioBytes is { } bytes && segment.WinnerFileName is not null)
             {
-                await File.WriteAllBytesAsync(Path.Combine(auditionDir, segment.WinnerFileName), bytes, ct).ConfigureAwait(false);
+                await WriteWinnerAsync(auditionDir, segment.WinnerFileName, bytes, ct).ConfigureAwait(false);
             }
         }
 
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
         string manifest = JsonSerializer.Serialize(report, options);
         await File.WriteAllTextAsync(Path.Combine(outputDir, "audition-manifest.json"), manifest, ct).ConfigureAwait(false);
+    }
+
+    // The file name comes from AuditionService.TakeFileName, which keeps it inside one folder. The check
+    // here is a second guard: the resolved path must stay under the audition directory.
+    private static async Task WriteWinnerAsync(string auditionDir, string fileName, byte[] bytes, CancellationToken ct)
+    {
+        string root = Path.GetFullPath(auditionDir) + Path.DirectorySeparatorChar;
+        string target = Path.GetFullPath(Path.Combine(auditionDir, fileName));
+        if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Winning take file name resolves outside the audition directory.");
+        }
+
+        await File.WriteAllBytesAsync(target, bytes, ct).ConfigureAwait(false);
     }
 
     private static async Task<TranslateRequest?> ReadTranslateRequestAsync(HttpRequest http, CancellationToken ct)

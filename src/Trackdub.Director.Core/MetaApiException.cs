@@ -1,6 +1,6 @@
 namespace Trackdub.Director.Core;
 
-public sealed class MetaApiException : Exception
+public class MetaApiException : Exception
 {
     public MetaApiException(string message)
         : base(message)
