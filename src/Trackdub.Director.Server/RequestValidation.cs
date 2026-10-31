@@ -4,29 +4,63 @@ using Trackdub.Director.Core;
 // Checks request content and builds QA options. Each validator returns the error to send, or null.
 internal static class RequestValidation
 {
+    private static readonly SegmentRules<AuditionSegmentInput> AuditionRules = new()
+    {
+        IsIncomplete = IsIncompleteAuditionSegment,
+        IdOf = s => s.Id,
+        IncompleteMessage = "Each segment must have a non-empty 'id' and 'text'.",
+        MaxSegments = MaxAuditionSegments,
+    };
+
+    private static readonly SegmentRules<DirectorAdaptationSegmentInput> AdaptationRules = new()
+    {
+        IsIncomplete = s => s is null || string.IsNullOrWhiteSpace(s.Id),
+        IdOf = s => s.Id,
+        IncompleteMessage = "Each segment must have a non-empty 'id'.",
+        MaxSegments = MaxAdaptationSegments,
+    };
+
     internal static string? ValidateAuditionSegments(IReadOnlyList<AuditionSegmentInput> segments)
     {
-        if (segments.Any(IsIncompleteAuditionSegment))
-        {
-            return "Each segment must have a non-empty 'id' and 'text'.";
-        }
-
-        if (HasDuplicateIds(segments.Select(s => s!.Id.Trim())))
-        {
-            return "Duplicate segment ids are not allowed.";
-        }
-
-        if (segments.Count > MaxAuditionSegments)
-        {
-            return $"At most {MaxAuditionSegments} segments are allowed per request.";
-        }
-
-        return null;
+        return ValidateSegments(segments, AuditionRules);
     }
 
     private static bool IsIncompleteAuditionSegment(AuditionSegmentInput segment)
     {
         return segment is null || string.IsNullOrWhiteSpace(segment.Id) || segment.Text is null;
+    }
+
+    private sealed class SegmentRules<T>
+    {
+        public required Func<T, bool> IsIncomplete { get; init; }
+
+        public required Func<T, string> IdOf { get; init; }
+
+        public required string IncompleteMessage { get; init; }
+
+        public required int MaxSegments { get; init; }
+    }
+
+    // Shared shape for the segment validators: completeness, unique ids, then count.
+    private static string? ValidateSegments<T>(IReadOnlyList<T> segments, SegmentRules<T> rules)
+        where T : class
+    {
+        if (segments.Any(rules.IsIncomplete))
+        {
+            return rules.IncompleteMessage;
+        }
+
+        if (HasDuplicateIds(segments.Select(s => rules.IdOf(s).Trim())))
+        {
+            return "Duplicate segment ids are not allowed.";
+        }
+
+        if (segments.Count > rules.MaxSegments)
+        {
+            return $"At most {rules.MaxSegments} segments are allowed per request.";
+        }
+
+        return null;
     }
 
     private static bool HasDuplicateIds(IEnumerable<string> ids)
@@ -148,22 +182,7 @@ internal static class RequestValidation
 
     internal static string? ValidateAdaptationSegments(IReadOnlyList<DirectorAdaptationSegmentInput> segments)
     {
-        if (segments.Any(s => s is null || string.IsNullOrWhiteSpace(s.Id)))
-        {
-            return "Each segment must have a non-empty 'id'.";
-        }
-
-        if (HasDuplicateIds(segments.Select(s => s!.Id.Trim())))
-        {
-            return "Duplicate segment ids are not allowed.";
-        }
-
-        if (segments.Count > MaxAdaptationSegments)
-        {
-            return $"At most {MaxAdaptationSegments} segments are allowed per request.";
-        }
-
-        return null;
+        return ValidateSegments(segments, AdaptationRules);
     }
 
     // Trims the caller's language, or falls back to the default when it is missing or blank.

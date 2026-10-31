@@ -11,7 +11,16 @@ public sealed class AuditionServiceTests
 
     private static string FailJson(string issue) => $$"""{"verdict":"fail","issues":["{{issue}}"],"explanation":"Candidate omits material meaning."}""";
 
-    private static HttpResponseMessage ChatResponse(string content, int promptTokens = 10, int completionTokens = 5)
+    private sealed class ChatReply
+    {
+        public required string Content { get; init; }
+
+        public int PromptTokens { get; init; } = 10;
+
+        public int CompletionTokens { get; init; } = 5;
+    }
+
+    private static HttpResponseMessage ChatResponse(ChatReply reply)
     {
         var payload = new
         {
@@ -21,13 +30,13 @@ public sealed class AuditionServiceTests
             model = "muse-spark-1.1",
             choices = new[]
             {
-                new { index = 0, finish_reason = "stop", message = new { role = "assistant", content } },
+                new { index = 0, finish_reason = "stop", message = new { role = "assistant", content = reply.Content } },
             },
             usage = new
             {
-                prompt_tokens = promptTokens,
-                completion_tokens = completionTokens,
-                total_tokens = promptTokens + completionTokens,
+                prompt_tokens = reply.PromptTokens,
+                completion_tokens = reply.CompletionTokens,
+                total_tokens = reply.PromptTokens + reply.CompletionTokens,
             },
         };
         return new HttpResponseMessage(HttpStatusCode.OK)
@@ -44,19 +53,27 @@ public sealed class AuditionServiceTests
             => _handler(request, cancellationToken);
     }
 
-    private static IDisposable EnvShim(string key, string value)
+    private sealed class EnvVar
     {
-        string? prev = Environment.GetEnvironmentVariable(key);
-        Environment.SetEnvironmentVariable(key, value);
-        return new Restore(key, prev);
+        public required string Key { get; init; }
+
+        public string? Value { get; init; }
     }
 
-    private sealed class Restore : IDisposable
+    private static EnvVar MetaKey => new() { Key = MetaAuth.PrimaryApiKeyEnv, Value = "LLM_test-fake-key" };
+
+    private static EnvVar NoElevenLabsKey => new() { Key = ElevenLabsAuth.ApiKeyEnv, Value = "" };
+
+    private static IDisposable EnvShim(EnvVar variable)
     {
-        private readonly string _key;
-        private readonly string? _prev;
-        public Restore(string key, string? prev) { _key = key; _prev = prev; }
-        public void Dispose() => Environment.SetEnvironmentVariable(_key, _prev);
+        string? previous = Environment.GetEnvironmentVariable(variable.Key);
+        Environment.SetEnvironmentVariable(variable.Key, variable.Value);
+        return new Restore(new EnvVar { Key = variable.Key, Value = previous });
+    }
+
+    private sealed class Restore(EnvVar snapshot) : IDisposable
+    {
+        public void Dispose() => Environment.SetEnvironmentVariable(snapshot.Key, snapshot.Value);
     }
 
     /// <summary>Fake TTS: deterministic WAV bytes of queued durations; records every call.</summary>
@@ -80,6 +97,13 @@ public sealed class AuditionServiceTests
 
         public int PcmBitsPerSample => 16;
 
+        public PcmFormat Format => new()
+        {
+            SampleRate = PcmSampleRate,
+            Channels = PcmChannels,
+            BitsPerSample = PcmBitsPerSample,
+        };
+
         public void EnsureConfigured()
         {
         }
@@ -95,7 +119,7 @@ public sealed class AuditionServiceTests
             double seconds = _durations.Count > 0 ? _durations.Dequeue() : 1.0;
             int frames = (int)Math.Round(seconds * PcmSampleRate);
             byte[] pcm = new byte[frames * 2];
-            byte[] wav = AudioDuration.ToWav(pcm, PcmSampleRate, PcmChannels, PcmBitsPerSample);
+            byte[] wav = AudioDuration.ToWav(pcm, Format);
             return Task.FromResult(new TtsSynthesisResult(wav, text.Length));
         }
 
@@ -132,7 +156,12 @@ public sealed class AuditionServiceTests
                         throw new InvalidOperationException("No more canned meaning JSON queued.");
                     }
 
-                    return ChatResponse(MeaningJsons.Dequeue(), promptTokens: 7, completionTokens: 4);
+                    return ChatResponse(new ChatReply
+                    {
+                        Content = MeaningJsons.Dequeue(),
+                        PromptTokens = 7,
+                        CompletionTokens = 4,
+                    });
                 }
 
                 if (Translations.Count == 0)
@@ -140,7 +169,7 @@ public sealed class AuditionServiceTests
                     throw new InvalidOperationException("No more canned translations queued.");
                 }
 
-                return ChatResponse(Translations.Dequeue());
+                return ChatResponse(new ChatReply { Content = Translations.Dequeue() });
             });
             return new MetaClient(new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) });
         }
@@ -154,7 +183,7 @@ public sealed class AuditionServiceTests
     [Fact]
     public async Task MeaningFail_texts_are_never_synthesized()
     {
-        using var shim = EnvShim(MetaAuth.PrimaryApiKeyEnv, "LLM_test-fake-key");
+        using var shim = EnvShim(MetaKey);
         var meta = new MetaFake();
         meta.Translations.Enqueue("Una toma mas.");
         meta.Translations.Enqueue("Necesitamos una toma mas.");
@@ -173,37 +202,56 @@ public sealed class AuditionServiceTests
         // Only the meaning-passing revision was synthesized (call counts prove the gate).
         AuditionSegmentReport line = Assert.Single(report.Segments);
         Assert.Equal(2, line.Takes.Length);
-        Assert.Equal(MeaningVerdict.Fail, line.Takes[0].MeaningVerdict);
-        Assert.False(line.Takes[0].Synthesized);
-        Assert.Equal(MeaningVerdict.Pass, line.Takes[1].MeaningVerdict);
-        Assert.True(line.Takes[1].Synthesized);
-        Assert.Single(tts.SynthCalls);
-        Assert.Equal("Necesitamos una toma mas.", tts.SynthCalls[0].Text);
-        Assert.Equal("voice-alba", tts.SynthCalls[0].VoiceId);
+
+        AuditionTakeReport failed = line.Takes[0];
+        Assert.Equal(MeaningVerdict.Fail, failed.MeaningVerdict);
+        Assert.False(failed.Synthesized);
+
+        AuditionTakeReport passed = line.Takes[1];
+        Assert.Equal(MeaningVerdict.Pass, passed.MeaningVerdict);
+        Assert.True(passed.Synthesized);
+
+        List<(string VoiceId, string Text)> calls = tts.SynthCalls;
+        Assert.Single(calls);
+        Assert.Equal("Necesitamos una toma mas.", calls[0].Text);
+        Assert.Equal("voice-alba", calls[0].VoiceId);
+
         Assert.True(line.Cast);
     }
 
-    private static string Long(string seed, int length)
+    private sealed class SeedText
+    {
+        public required string Value { get; init; }
+
+        public required int Length { get; init; }
+    }
+
+    private static string Long(SeedText seed)
     {
         // Overlong for the QA estimator (window 4.0s allows 66 chars), so QA
         // revision loop produces several candidates with meaning NotEvaluated.
-        var sb = new StringBuilder(seed);
-        while (sb.Length < length)
+        var sb = new StringBuilder(seed.Value);
+        while (sb.Length < seed.Length)
         {
-            sb.Append(seed);
+            sb.Append(seed.Value);
         }
 
-        return sb.ToString()[..length];
+        return sb.ToString()[..seed.Length];
     }
 
-    private static MetaFake OverlongMeta(int meaningPasses)
+    private enum MeaningPasses
+    {
+        Three = 3,
+    }
+
+    private static MetaFake OverlongMeta(MeaningPasses passes)
     {
         var meta = new MetaFake();
-        meta.Translations.Enqueue(Long("Frase larga numero uno que sigue. ", 100));
-        meta.Translations.Enqueue(Long("Frase larga numero dos que sigue. ", 100));
-        meta.Translations.Enqueue(Long("Frase larga numero tres que sigue. ", 100));
-        meta.Translations.Enqueue(Long("Frase larga numero cuatro que sigue. ", 100));
-        for (int i = 0; i < meaningPasses; i++)
+        meta.Translations.Enqueue(Long(new SeedText { Value = "Frase larga numero uno que sigue. ", Length = 100 }));
+        meta.Translations.Enqueue(Long(new SeedText { Value = "Frase larga numero dos que sigue. ", Length = 100 }));
+        meta.Translations.Enqueue(Long(new SeedText { Value = "Frase larga numero tres que sigue. ", Length = 100 }));
+        meta.Translations.Enqueue(Long(new SeedText { Value = "Frase larga numero cuatro que sigue. ", Length = 100 }));
+        for (int i = 0; i < (int)passes; i++)
         {
             meta.MeaningJsons.Enqueue(PassJson);
         }
@@ -214,8 +262,8 @@ public sealed class AuditionServiceTests
     [Fact]
     public async Task BestFit_take_wins_among_passing_takes()
     {
-        using var shim = EnvShim(MetaAuth.PrimaryApiKeyEnv, "LLM_test-fake-key");
-        MetaFake meta = OverlongMeta(meaningPasses: 3);
+        using var shim = EnvShim(MetaKey);
+        MetaFake meta = OverlongMeta(MeaningPasses.Three);
         // Window 4.0 (allowed 4.4): 5.0 fails timing; 4.3 passes (err 0.3); 4.05 passes (err 0.05) and wins.
         var tts = new FakeTts([5.0, 4.3, 4.05]);
 
@@ -225,25 +273,32 @@ public sealed class AuditionServiceTests
         AuditionSegmentReport line = Assert.Single(report.Segments);
         Assert.Equal(3, line.Takes.Length);
         Assert.Equal(3, tts.SynthCalls.Count);
-        Assert.Equal(AuditionTimingVerdict.Fail, line.Takes[0].TimingVerdict);
-        Assert.Equal(AuditionTimingVerdict.Pass, line.Takes[1].TimingVerdict);
-        Assert.Equal(AuditionTimingVerdict.Pass, line.Takes[2].TimingVerdict);
+
+        AuditionTakeReport[] takes = line.Takes;
+        Assert.Equal(AuditionTimingVerdict.Fail, takes[0].TimingVerdict);
+        Assert.Equal(AuditionTimingVerdict.Pass, takes[1].TimingVerdict);
+        Assert.Equal(AuditionTimingVerdict.Pass, takes[2].TimingVerdict);
+
+        AuditionTakeReport winner = takes[2];
         Assert.Equal(3, line.WinnerTakeNumber);
         Assert.Equal("seg-1-take3.wav", line.WinnerFileName);
-        Assert.True(line.Takes[2].IsWinner);
-        Assert.False(line.Takes[1].IsWinner);
+        Assert.True(winner.IsWinner);
+
+        AuditionTakeReport runnerUp = takes[1];
+        Assert.False(runnerUp.IsWinner);
         Assert.True(line.Cast);
         Assert.Equal(1, report.Totals.LinesCast);
-        Assert.Equal(3, report.Totals.TakesSynthesized);
-        // QA made 4 translate calls (initial + 3 revisions); audition meaning-checked 3 candidates.
-        Assert.Equal(7, report.Totals.MetaCalls);
+
+        AuditionTotals totals = report.Totals;
+        Assert.Equal(3, totals.TakesSynthesized);
+        Assert.Equal(7, totals.MetaCalls);
     }
 
     [Fact]
     public async Task NoWinning_take_reports_line_uncast_with_verdicts_preserved()
     {
-        using var shim = EnvShim(MetaAuth.PrimaryApiKeyEnv, "LLM_test-fake-key");
-        MetaFake meta = OverlongMeta(meaningPasses: 3);
+        using var shim = EnvShim(MetaKey);
+        MetaFake meta = OverlongMeta(MeaningPasses.Three);
         var tts = new FakeTts([6.0, 6.0, 6.0]);
 
         AuditionReport report = await BuildService(meta, tts).RunAsync(
@@ -253,12 +308,15 @@ public sealed class AuditionServiceTests
         Assert.False(line.Cast);
         Assert.Null(line.WinnerTakeNumber);
         Assert.Null(line.WinnerFileName);
-        Assert.Equal(0, report.Totals.LinesCast);
+
+        AuditionTotals totals = report.Totals;
+        Assert.Equal(0, totals.LinesCast);
         Assert.All(line.Takes, t =>
         {
             Assert.Equal(MeaningVerdict.Pass, t.MeaningVerdict);
             Assert.True(t.Synthesized);
-            Assert.Equal(AuditionTimingVerdict.Fail, t.TimingVerdict);
+            AuditionTimingVerdict timing = t.TimingVerdict;
+            Assert.Equal(AuditionTimingVerdict.Fail, timing);
             Assert.False(t.IsWinner);
         });
     }
@@ -266,7 +324,7 @@ public sealed class AuditionServiceTests
     [Fact]
     public async Task Character_cap_stops_synthesis_for_the_run()
     {
-        using var shim = EnvShim(MetaAuth.PrimaryApiKeyEnv, "LLM_test-fake-key");
+        using var shim = EnvShim(MetaKey);
         var meta = new MetaFake();
         var segments = new List<AuditionSegmentInput>();
         for (int i = 1; i <= 6; i++)
@@ -280,23 +338,29 @@ public sealed class AuditionServiceTests
         AuditionReport report = await BuildService(meta, tts).RunAsync(segments, "en", "es");
 
         // Five 600-char takes reach exactly 3000; the sixth would exceed it.
-        Assert.True(report.Totals.ElevenLabsCapHit);
-        Assert.False(report.Totals.MetaCapHit);
-        Assert.Equal(3000, report.Totals.ElevenLabsCharacters);
-        Assert.Equal(5, report.Totals.TakesSynthesized);
+        AuditionTotals totals = report.Totals;
+        Assert.True(totals.ElevenLabsCapHit);
+        Assert.False(totals.MetaCapHit);
+        Assert.Equal(3000, totals.ElevenLabsCharacters);
+
+        int synthesized = totals.TakesSynthesized;
+        Assert.Equal(5, synthesized);
         Assert.Equal(5, tts.SynthCalls.Count);
+
         AuditionSegmentReport last = report.Segments[^1];
-        Assert.False(last.Takes[0].Synthesized);
-        Assert.Contains("cap", last.Takes[0].SynthesisNote ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        AuditionTakeReport lastTake = last.Takes[0];
+        Assert.False(lastTake.Synthesized);
+        Assert.Contains("cap", lastTake.SynthesisNote ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.False(last.Cast);
-        Assert.Equal(5, report.Totals.LinesCast);
+
+        Assert.Equal(5, totals.LinesCast);
     }
 
     [Fact]
     public async Task MissingApiKey_fails_closed_with_zero_calls()
     {
-        using var metaShim = EnvShim(MetaAuth.PrimaryApiKeyEnv, "LLM_test-fake-key");
-        using var elevenLabsShim = EnvShim(ElevenLabsAuth.ApiKeyEnv, "");
+        using var metaShim = EnvShim(MetaKey);
+        using var elevenLabsShim = EnvShim(NoElevenLabsKey);
         var meta = new MetaFake();
         meta.Translations.Enqueue("Hola.");
         meta.MeaningJsons.Enqueue(PassJson);
