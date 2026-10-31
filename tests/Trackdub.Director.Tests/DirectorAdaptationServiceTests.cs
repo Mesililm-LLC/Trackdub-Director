@@ -29,6 +29,7 @@ public sealed class DirectorAdaptationServiceTests
         public string MeaningContent = """{"verdict":"pass","issues":[],"explanation":"Meaning preserved."}""";
         public bool MeaningTransportsError;
         public bool AdaptationTransportsError;
+        public bool AdaptationBodyReadFails;
 
         public async Task<HttpResponseMessage> HandleAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -53,6 +54,11 @@ public sealed class DirectorAdaptationServiceTests
         private HttpResponseMessage AdaptationResponse()
         {
             AdaptationCalls++;
+            if (AdaptationBodyReadFails)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new BodyReadFailsContent() };
+            }
+
             if (AdaptationTransportsError)
             {
                 return UpstreamError();
@@ -79,6 +85,18 @@ public sealed class DirectorAdaptationServiceTests
     }
 
     private sealed record ChatReply(string Content, int PromptTokens, int CompletionTokens, int? ReasoningTokens, string FinishReason);
+
+    private sealed class BodyReadFailsContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => throw new HttpRequestException("body read reset");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
 
     private static HttpResponseMessage ChatOk(ChatReply reply)
     {
@@ -476,17 +494,21 @@ public sealed class DirectorAdaptationServiceTests
         }
     }
 
-    public enum TransportFailure { Adaptation, Meaning }
+    public enum TransportFailure { Adaptation, BodyRead, Meaning }
 
     [Theory]
     [InlineData(TransportFailure.Adaptation)]
+    [InlineData(TransportFailure.BodyRead)]
     [InlineData(TransportFailure.Meaning)]
     public async Task TransportError_FailsTheSegmentAsTerminal(TransportFailure failure)
     {
-        bool adaptationFails = failure == TransportFailure.Adaptation;
-        var stub = adaptationFails
-            ? new LaneStub { AdaptationTransportsError = true }
-            : new LaneStub { MeaningTransportsError = true };
+        bool adaptationFails = failure != TransportFailure.Meaning;
+        LaneStub stub = failure switch
+        {
+            TransportFailure.Adaptation => new LaneStub { AdaptationTransportsError = true },
+            TransportFailure.BodyRead => new LaneStub { AdaptationBodyReadFails = true },
+            _ => new LaneStub { MeaningTransportsError = true },
+        };
         (DirectorAdaptationService service, IDisposable scope) = BuildService(stub);
         using var _ = scope;
 
@@ -499,7 +521,7 @@ public sealed class DirectorAdaptationServiceTests
         if (adaptationFails)
         {
             Assert.NotNull(result.Error);
-            Assert.Contains("HTTP 500", result.Error, StringComparison.Ordinal);
+            Assert.Contains(failure == TransportFailure.BodyRead ? "body read reset" : "HTTP 500", result.Error, StringComparison.Ordinal);
             Assert.Equal(0, stub.MeaningCalls);
             return;
         }
