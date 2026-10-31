@@ -1,0 +1,991 @@
+{
+  "stage": "meaning-eval",
+  "source_language": "en",
+  "target_language": "es",
+  "prompt_template_version": "meaning-v1",
+  "timestamp_utc": "2026-10-31T19:37:50.5813061Z",
+  "summary": {
+    "cases": 40,
+    "seeded_errors": 24,
+    "clean": 16,
+    "caught": 24,
+    "missed": 0,
+    "false_alarms": 0,
+    "api_errors": 0,
+    "recall": 1,
+    "false_positive_rate": 0,
+    "by_error_type": [
+      {
+        "error_type": "added_content",
+        "cases": 2,
+        "caught": 2
+      },
+      {
+        "error_type": "dropped_content",
+        "cases": 4,
+        "caught": 4
+      },
+      {
+        "error_type": "modality",
+        "cases": 3,
+        "caught": 3
+      },
+      {
+        "error_type": "named_entity",
+        "cases": 3,
+        "caught": 3
+      },
+      {
+        "error_type": "negation",
+        "cases": 4,
+        "caught": 4
+      },
+      {
+        "error_type": "number",
+        "cases": 3,
+        "caught": 3
+      },
+      {
+        "error_type": "role_swap",
+        "cases": 3,
+        "caught": 3
+      },
+      {
+        "error_type": "time",
+        "cases": 2,
+        "caught": 2
+      }
+    ],
+    "total_tokens": 24440
+  },
+  "results": [
+    {
+      "id": "clean-01-voa10-002",
+      "source_text": "Anna, Which coffee shop? There are three coffee shops.",
+      "candidate": "Anna, \u00BFqu\u00E9 cafeter\u00EDa? Hay tres cafeter\u00EDas.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately preserves all material elements: address to Anna, question about which coffee shop, and statement that there are three coffee shops.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:36:56.6858568Z",
+        "usage": {
+          "PromptTokens": 367,
+          "CompletionTokens": 200,
+          "TotalTokens": 567
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately preserves all material elements: address to Anna, question about which coffee shop, and statement that there are three coffee shops.\u0022}"
+      }
+    },
+    {
+      "id": "clean-02-voa10-003",
+      "source_text": "Okay, my apartment is across from a big department store.",
+      "candidate": "Vale, mi apartamento est\u00E1 enfrente de unos grandes almacenes.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately preserves location and subject; \u0027unos grandes almacenes\u0027 is the idiomatic Spanish plural form for a single big department store, so meaning matches source.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:36:58.8007327Z",
+        "usage": {
+          "PromptTokens": 366,
+          "CompletionTokens": 319,
+          "TotalTokens": 685
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately preserves location and subject; \u0027unos grandes almacenes\u0027 is the idiomatic Spanish plural form for a single big department store, so meaning matches source.\u0022}"
+      }
+    },
+    {
+      "id": "clean-03-voa10-004",
+      "source_text": "A big department store? Ah, I see it!",
+      "candidate": "\u00BFUnos grandes almacenes? \u00A1Ah, ya lo veo!",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately conveys identification of a big department store and acknowledgment of seeing it; plural \u0027grandes almacenes\u0027 is the idiomatic Spanish term.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:36:59.9579061Z",
+        "usage": {
+          "PromptTokens": 366,
+          "CompletionTokens": 267,
+          "TotalTokens": 633
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately conveys identification of a big department store and acknowledgment of seeing it; plural \u0027grandes almacenes\u0027 is the idiomatic Spanish term.\u0022}"
+      }
+    },
+    {
+      "id": "clean-04-voa10-005",
+      "source_text": "Okay! Bye, Ashley. See you soon!",
+      "candidate": "\u00A1Vale! Adi\u00F3s, Ashley. \u00A1Hasta pronto!",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Translation preserves greeting, addressee, and farewell intent with natural Spanish equivalents.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:00.8259659Z",
+        "usage": {
+          "PromptTokens": 364,
+          "CompletionTokens": 160,
+          "TotalTokens": 524
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Translation preserves greeting, addressee, and farewell intent with natural Spanish equivalents.\u0022}"
+      }
+    },
+    {
+      "id": "clean-05-voa10-006",
+      "source_text": "Okay. See you soon.",
+      "candidate": "Vale. Nos vemos pronto.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Translation preserves both utterances: acknowledgment \u0027Okay\u0027 -\u003E \u0027Vale\u0027 and \u0027See you soon\u0027 -\u003E \u0027Nos vemos pronto\u0027 with identical intent.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:01.6518506Z",
+        "usage": {
+          "PromptTokens": 353,
+          "CompletionTokens": 182,
+          "TotalTokens": 535
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Translation preserves both utterances: acknowledgment \u0027Okay\u0027 -\u003E \u0027Vale\u0027 and \u0027See you soon\u0027 -\u003E \u0027Nos vemos pronto\u0027 with identical intent.\u0022}"
+      }
+    },
+    {
+      "id": "clean-06-fpc-002",
+      "source_text": "Hi Anna! I\u0027m coming to your apartment. Where is your apartment?",
+      "candidate": "\u00A1Hola, Anna! Voy a tu apartamento. \u00BFD\u00F3nde est\u00E1 tu apartamento?",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately conveys greeting, movement to Anna\u0027s apartment, and request for location with same subject, action, and object.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:03.5077780Z",
+        "usage": {
+          "PromptTokens": 371,
+          "CompletionTokens": 217,
+          "TotalTokens": 588
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately conveys greeting, movement to Anna\u0027s apartment, and request for location with same subject, action, and object.\u0022}"
+      }
+    },
+    {
+      "id": "clean-07-fpc-003",
+      "source_text": "My apartment is near the Columbia Heights Metro.",
+      "candidate": "Mi apartamento est\u00E1 cerca del metro de Columbia Heights.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately preserves subject (my apartment), location relation (near), and named entity (Columbia Heights Metro) with natural Spanish word order.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:04.2069228Z",
+        "usage": {
+          "PromptTokens": 360,
+          "CompletionTokens": 157,
+          "TotalTokens": 517
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately preserves subject (my apartment), location relation (near), and named entity (Columbia Heights Metro) with natural Spanish word order.\u0022}"
+      }
+    },
+    {
+      "id": "clean-08-meet-002",
+      "source_text": "I love having my friends over. Come on!",
+      "candidate": "Me encanta recibir a mis amigos en casa. \u00A1Vamos!",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Both sentences preserve material meaning: enjoyment of hosting friends and an encouraging invitation, with \u0027\u00A1Vamos!\u0027 as idiomatic equivalent of \u0027Come on!\u0027.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:05.2504251Z",
+        "usage": {
+          "PromptTokens": 364,
+          "CompletionTokens": 215,
+          "TotalTokens": 579
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Both sentences preserve material meaning: enjoyment of hosting friends and an encouraging invitation, with \u0027\u00A1Vamos!\u0027 as idiomatic equivalent of \u0027Come on!\u0027.\u0022}"
+      }
+    },
+    {
+      "id": "clean-09-seg-001",
+      "source_text": "The director checks every line before it reaches the audience.",
+      "candidate": "El director revisa cada frase antes de que llegue al p\u00FAblico.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate preserves subject (director), action (checks/revisa), object (every line/cada frase), and temporal clause (before it reaches the audience/antes de que llegue al p\u00FAblico) with no material change.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:06.2935858Z",
+        "usage": {
+          "PromptTokens": 365,
+          "CompletionTokens": 223,
+          "TotalTokens": 588
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate preserves subject (director), action (checks/revisa), object (every line/cada frase), and temporal clause (before it reaches the audience/antes de que llegue al p\u00FAblico) with no material change.\u0022}"
+      }
+    },
+    {
+      "id": "clean-10-seg-002",
+      "source_text": "We need one more take.",
+      "candidate": "Necesitamos una toma m\u00E1s.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate directly translates \u0027We need one more take\u0027 as \u0027Necesitamos una toma m\u00E1s\u0027, preserving subject, modality, quantity, and film terminology.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:07.5000619Z",
+        "usage": {
+          "PromptTokens": 355,
+          "CompletionTokens": 198,
+          "TotalTokens": 553
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate directly translates \u0027We need one more take\u0027 as \u0027Necesitamos una toma m\\u00e1s\u0027, preserving subject, modality, quantity, and film terminology.\u0022}"
+      }
+    },
+    {
+      "id": "clean-11-seg-003",
+      "source_text": "Action!",
+      "candidate": "\u00A1Acci\u00F3n!",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate is direct equivalent of film direction cue \u0027Action!\u0027 with no loss or addition of material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:08.7069354Z",
+        "usage": {
+          "PromptTokens": 347,
+          "CompletionTokens": 161,
+          "TotalTokens": 508
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate is direct equivalent of film direction cue \u0027Action!\u0027 with no loss or addition of material meaning.\u0022}"
+      }
+    },
+    {
+      "id": "clean-12-seg-004",
+      "source_text": "That was perfect. Let us move on.",
+      "candidate": "Eso estuvo perfecto. Sigamos.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately preserves both clauses: \u0027That was perfect\u0027 -\u003E \u0027Eso estuvo perfecto\u0027 and \u0027Let us move on\u0027 -\u003E \u0027Sigamos\u0027 with no change in meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:10.0162614Z",
+        "usage": {
+          "PromptTokens": 357,
+          "CompletionTokens": 168,
+          "TotalTokens": 525
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately preserves both clauses: \u0027That was perfect\u0027 -\u003E \u0027Eso estuvo perfecto\u0027 and \u0027Let us move on\u0027 -\u003E \u0027Sigamos\u0027 with no change in meaning.\u0022}"
+      }
+    },
+    {
+      "id": "clean-13-seg-005",
+      "source_text": "Quiet on set, please.",
+      "candidate": "Silencio en el set, por favor.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate is a direct, accurate translation preserving request for quiet on set with polite marker.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:10.9099582Z",
+        "usage": {
+          "PromptTokens": 356,
+          "CompletionTokens": 129,
+          "TotalTokens": 485
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate is a direct, accurate translation preserving request for quiet on set with polite marker.\u0022}"
+      }
+    },
+    {
+      "id": "clean-14-seg-006",
+      "source_text": "Where are we shooting tomorrow?",
+      "candidate": "\u00BFD\u00F3nde rodamos ma\u00F1ana?",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately preserves subject (we), action (shooting/filming -\u003E rodamos), location question (where) and time (tomorrow -\u003E ma\u00F1ana).",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:12.3241026Z",
+        "usage": {
+          "PromptTokens": 352,
+          "CompletionTokens": 178,
+          "TotalTokens": 530
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately preserves subject (we), action (shooting/filming -\u003E rodamos), location question (where) and time (tomorrow -\u003E ma\u00F1ana).\u0022}"
+      }
+    },
+    {
+      "id": "clean-15-seg-007",
+      "source_text": "Thank you for joining us today.",
+      "candidate": "Gracias por acompa\u00F1arnos hoy.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate accurately conveys gratitude for joining today, matching subject, action, and temporal reference.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:12.9831498Z",
+        "usage": {
+          "PromptTokens": 354,
+          "CompletionTokens": 121,
+          "TotalTokens": 475
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate accurately conveys gratitude for joining today, matching subject, action, and temporal reference.\u0022}"
+      }
+    },
+    {
+      "id": "clean-16-seg-008",
+      "source_text": "We will see you on the next stage.",
+      "candidate": "Le veremos en la pr\u00F3xima etapa.",
+      "expected": "Pass",
+      "error_type": null,
+      "outcome": "CleanPass",
+      "gate": {
+        "verdict": "Pass",
+        "issues": [],
+        "explanation": "Candidate preserves subject (we), future action (will see), addressee (you -\u003E formal \u0027Le\u0027), and location (next stage -\u003E pr\u00F3xima etapa) with natural Spanish phrasing.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:15.5803066Z",
+        "usage": {
+          "PromptTokens": 357,
+          "CompletionTokens": 421,
+          "TotalTokens": 778
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022pass\u0022, \u0022issues\u0022: [], \u0022explanation\u0022: \u0022Candidate preserves subject (we), future action (will see), addressee (you -\u003E formal \u0027Le\u0027), and location (next stage -\u003E pr\u00F3xima etapa) with natural Spanish phrasing.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-01-seg-004",
+      "source_text": "That was perfect. Let us move on.",
+      "candidate": "Eso no estuvo perfecto. Sigamos.",
+      "expected": "Fail",
+      "error_type": "negation",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "polarity reversed: source \u0027perfect\u0027 rendered as \u0027no estuvo perfecto\u0027 (not perfect)"
+        ],
+        "explanation": "Candidate inserts negation \u0027no\u0027, flipping the positive evaluation \u0027perfect\u0027 to \u0027not perfect\u0027, which changes material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:16.6934219Z",
+        "usage": {
+          "PromptTokens": 358,
+          "CompletionTokens": 215,
+          "TotalTokens": 573
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022polarity reversed: source \u0027perfect\u0027 rendered as \u0027no estuvo perfecto\u0027 (not perfect)\u0022], \u0022explanation\u0022: \u0022Candidate inserts negation \u0027no\u0027, flipping the positive evaluation \u0027perfect\u0027 to \u0027not perfect\u0027, which changes material meaning.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-02-meet-002",
+      "source_text": "I love having my friends over. Come on!",
+      "candidate": "No me gusta recibir a mis amigos en casa. \u00A1Vamos!",
+      "expected": "Fail",
+      "error_type": "negation",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "polarity reversal: source says \u0027love having friends over\u0027 but candidate says \u0027No me gusta recibir a mis amigos\u0027 (dislike)"
+        ],
+        "explanation": "Candidate reverses the core meaning from positive to negative, changing love to dislike, which is a material polarity failure.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:17.7786082Z",
+        "usage": {
+          "PromptTokens": 364,
+          "CompletionTokens": 258,
+          "TotalTokens": 622
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022polarity reversal: source says \u0027love having friends over\u0027 but candidate says \u0027No me gusta recibir a mis amigos\u0027 (dislike)\u0022], \u0022explanation\u0022: \u0022Candidate reverses the core meaning from positive to negative, changing love to dislike, which is a material polarity failure.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-03-voa10-004",
+      "source_text": "A big department store? Ah, I see it!",
+      "candidate": "\u00BFUnos grandes almacenes? \u00A1Ah, no lo veo!",
+      "expected": "Fail",
+      "error_type": "negation",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "polarity inversion: source \u0027I see it\u0027 translated as \u0027no lo veo\u0027 (I don\u0027t see it)"
+        ],
+        "explanation": "Candidate negates the affirmative \u0027I see it\u0027, reversing polarity and changing material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:19.1826250Z",
+        "usage": {
+          "PromptTokens": 366,
+          "CompletionTokens": 216,
+          "TotalTokens": 582
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022polarity inversion: source \u0027I see it\u0027 translated as \u0027no lo veo\u0027 (I don\u0027t see it)\u0022], \u0022explanation\u0022: \u0022Candidate negates the affirmative \u0027I see it\u0027, reversing polarity and changing material meaning.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-04-seg-001",
+      "source_text": "The director checks every line before it reaches the audience.",
+      "candidate": "El director no revisa ninguna frase antes de que llegue al p\u00FAblico.",
+      "expected": "Fail",
+      "error_type": "negation",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Negation polarity reversed: source says director checks every line, candidate says director does not check any line"
+        ],
+        "explanation": "Candidate negates the core action, stating the director does not check lines, which directly contradicts the affirmative source meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:21.4535243Z",
+        "usage": {
+          "PromptTokens": 366,
+          "CompletionTokens": 257,
+          "TotalTokens": 623
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Negation polarity reversed: source says director checks every line, candidate says director does not check any line\u0022], \u0022explanation\u0022: \u0022Candidate negates the core action, stating the director does not check lines, which directly contradicts the affirmative source meaning.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-05-voa10-002",
+      "source_text": "Anna, Which coffee shop? There are three coffee shops.",
+      "candidate": "Anna, \u00BFqu\u00E9 cafeter\u00EDa? Hay dos cafeter\u00EDas.",
+      "expected": "Fail",
+      "error_type": "number",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "quantity mismatch: \u0027three\u0027 translated as \u0027dos\u0027 (two)"
+        ],
+        "explanation": "Candidate changes the number of coffee shops from three to two, altering factual content.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:22.6493809Z",
+        "usage": {
+          "PromptTokens": 367,
+          "CompletionTokens": 198,
+          "TotalTokens": 565
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022quantity mismatch: \u0027three\u0027 translated as \u0027dos\u0027 (two)\u0022], \u0022explanation\u0022: \u0022Candidate changes the number of coffee shops from three to two, altering factual content.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-06-seg-002",
+      "source_text": "We need one more take.",
+      "candidate": "Necesitamos dos tomas m\u00E1s.",
+      "expected": "Fail",
+      "error_type": "number",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Quantity error: \u0027one more take\u0027 changed to \u0027dos tomas m\u00E1s\u0027 (two more takes)"
+        ],
+        "explanation": "Source requests one additional take, candidate requests two, altering the quantity.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:23.4620572Z",
+        "usage": {
+          "PromptTokens": 356,
+          "CompletionTokens": 158,
+          "TotalTokens": 514
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Quantity error: \u0027one more take\u0027 changed to \u0027dos tomas m\\u00e1s\u0027 (two more takes)\u0022], \u0022explanation\u0022: \u0022Source requests one additional take, candidate requests two, altering the quantity.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-07-seg-001",
+      "source_text": "The director checks every line before it reaches the audience.",
+      "candidate": "El director revisa algunas frases antes de que lleguen al p\u00FAblico.",
+      "expected": "Fail",
+      "error_type": "number",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Quantity changed: \u0027every line\u0027 translated as \u0027algunas frases\u0027 (some phrases) instead of all/every"
+        ],
+        "explanation": "The source requires checking every line, but the candidate says only some phrases are checked, altering the scope and material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:24.6176075Z",
+        "usage": {
+          "PromptTokens": 366,
+          "CompletionTokens": 212,
+          "TotalTokens": 578
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Quantity changed: \u0027every line\u0027 translated as \u0027algunas frases\u0027 (some phrases) instead of all/every\u0022], \u0022explanation\u0022: \u0022The source requires checking every line, but the candidate says only some phrases are checked, altering the scope and material meaning.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-08-fpc-003",
+      "source_text": "My apartment is near the Columbia Heights Metro.",
+      "candidate": "Mi apartamento est\u00E1 cerca del metro de Dupont Circle.",
+      "expected": "Fail",
+      "error_type": "named_entity",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Named entity changed: Columbia Heights Metro -\u003E Dupont Circle metro"
+        ],
+        "explanation": "Candidate changes the location from Columbia Heights to Dupont Circle, altering a key factual detail.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:25.4192525Z",
+        "usage": {
+          "PromptTokens": 361,
+          "CompletionTokens": 163,
+          "TotalTokens": 524
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Named entity changed: Columbia Heights Metro -\u003E Dupont Circle metro\u0022], \u0022explanation\u0022: \u0022Candidate changes the location from Columbia Heights to Dupont Circle, altering a key factual detail.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-09-voa10-005",
+      "source_text": "Okay! Bye, Ashley. See you soon!",
+      "candidate": "\u00A1Vale! Adi\u00F3s, Anna. \u00A1Hasta pronto!",
+      "expected": "Fail",
+      "error_type": "named_entity",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "named entity changed: Ashley -\u003E Anna"
+        ],
+        "explanation": "Candidate changes the addressed person\u0027s name from Ashley to Anna, altering a material named entity while the farewell intent is preserved.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:26.4482491Z",
+        "usage": {
+          "PromptTokens": 364,
+          "CompletionTokens": 200,
+          "TotalTokens": 564
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022named entity changed: Ashley -\u003E Anna\u0022], \u0022explanation\u0022: \u0022Candidate changes the addressed person\u0027s name from Ashley to Anna, altering a material named entity while the farewell intent is preserved.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-10-fpc-002",
+      "source_text": "Hi Anna! I\u0027m coming to your apartment. Where is your apartment?",
+      "candidate": "\u00A1Hola, Ashley! Voy a tu apartamento. \u00BFD\u00F3nde est\u00E1 tu apartamento?",
+      "expected": "Fail",
+      "error_type": "named_entity",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "named entity changed from \u0027Anna\u0027 to \u0027Ashley\u0027"
+        ],
+        "explanation": "Candidate changes the addressee name from Anna to Ashley, altering a material named entity though the rest of the meaning is preserved.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:27.1599528Z",
+        "usage": {
+          "PromptTokens": 371,
+          "CompletionTokens": 160,
+          "TotalTokens": 531
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022named entity changed from \u0027Anna\u0027 to \u0027Ashley\u0027\u0022], \u0022explanation\u0022: \u0022Candidate changes the addressee name from Anna to Ashley, altering a material named entity though the rest of the meaning is preserved.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-11-voa10-003",
+      "source_text": "Okay, my apartment is across from a big department store.",
+      "candidate": "Vale, tu apartamento est\u00E1 enfrente de unos grandes almacenes.",
+      "expected": "Fail",
+      "error_type": "role_swap",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Possessive changes from \u0027my apartment\u0027 to \u0027your apartment\u0027 (tu apartamento), altering the subject/owner"
+        ],
+        "explanation": "Source says \u0027my apartment\u0027 but candidate says \u0027tu apartamento\u0027 (your apartment), changing who the apartment belongs to.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:28.2965974Z",
+        "usage": {
+          "PromptTokens": 366,
+          "CompletionTokens": 224,
+          "TotalTokens": 590
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Possessive changes from \u0027my apartment\u0027 to \u0027your apartment\u0027 (tu apartamento), altering the subject/owner\u0022], \u0022explanation\u0022: \u0022Source says \u0027my apartment\u0027 but candidate says \u0027tu apartamento\u0027 (your apartment), changing who the apartment belongs to.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-12-seg-001",
+      "source_text": "The director checks every line before it reaches the audience.",
+      "candidate": "El p\u00FAblico revisa cada frase antes de que llegue al director.",
+      "expected": "Fail",
+      "error_type": "role_swap",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "subject-object reversal: director is the checker in source but audience is checker in candidate; destination reversed"
+        ],
+        "explanation": "Candidate swaps who checks and who receives: source says director checks before reaching audience, candidate says audience checks before reaching director.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:29.6438119Z",
+        "usage": {
+          "PromptTokens": 365,
+          "CompletionTokens": 209,
+          "TotalTokens": 574
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022subject-object reversal: director is the checker in source but audience is checker in candidate; destination reversed\u0022], \u0022explanation\u0022: \u0022Candidate swaps who checks and who receives: source says director checks before reaching audience, candidate says audience checks before reaching director.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-13-seg-008",
+      "source_text": "We will see you on the next stage.",
+      "candidate": "Nos ver\u00E1s en la pr\u00F3xima etapa.",
+      "expected": "Fail",
+      "error_type": "role_swap",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "subject/object reversal: source says \u0027we\u0027 will see \u0027you\u0027, candidate says \u0027you\u0027 will see \u0027us\u0027"
+        ],
+        "explanation": "Candidate inverts who sees whom, changing subject from \u0027we\u0027 to \u0027you\u0027 and object from \u0027you\u0027 to \u0027us\u0027, while stage/etapa is preserved.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:32.2039978Z",
+        "usage": {
+          "PromptTokens": 358,
+          "CompletionTokens": 559,
+          "TotalTokens": 917
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022subject/object reversal: source says \u0027we\u0027 will see \u0027you\u0027, candidate says \u0027you\u0027 will see \u0027us\u0027\u0022], \u0022explanation\u0022: \u0022Candidate inverts who sees whom, changing subject from \u0027we\u0027 to \u0027you\u0027 and object from \u0027you\u0027 to \u0027us\u0027, while stage/etapa is preserved.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-14-seg-006",
+      "source_text": "Where are we shooting tomorrow?",
+      "candidate": "\u00BFRodamos ma\u00F1ana?",
+      "expected": "Fail",
+      "error_type": "dropped_content",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "omits interrogative \u0027where\u0027 \u2013 asks if shooting occurs rather than location"
+        ],
+        "explanation": "Source asks for the location of tomorrow\u0027s shoot (\u0027where\u0027), candidate asks whether they shoot tomorrow (\u0027\u00BFRodamos ma\u00F1ana?\u0027), losing material where-information.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:33.5042298Z",
+        "usage": {
+          "PromptTokens": 352,
+          "CompletionTokens": 232,
+          "TotalTokens": 584
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022omits interrogative \u0027where\u0027 \u2013 asks if shooting occurs rather than location\u0022], \u0022explanation\u0022: \u0022Source asks for the location of tomorrow\u0027s shoot (\u0027where\u0027), candidate asks whether they shoot tomorrow (\u0027\u00BFRodamos ma\u00F1ana?\u0027), losing material where-information.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-15-seg-007",
+      "source_text": "Thank you for joining us today.",
+      "candidate": "Gracias a todos.",
+      "expected": "Fail",
+      "error_type": "dropped_content",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "omits \u0027for joining us today\u0027 - reason/purpose of thanks"
+        ],
+        "explanation": "Candidate keeps the act of thanking but drops the material adjunct \u0027for joining us today\u0027, replacing it with a generic \u0027a todos\u0027, losing why the thanks is given.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:39.0011578Z",
+        "usage": {
+          "PromptTokens": 352,
+          "CompletionTokens": 1110,
+          "TotalTokens": 1462
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022omits \u0027for joining us today\u0027 - reason/purpose of thanks\u0022], \u0022explanation\u0022: \u0022Candidate keeps the act of thanking but drops the material adjunct \u0027for joining us today\u0027, replacing it with a generic \u0027a todos\u0027, losing why the thanks is given.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-16-voa10-003",
+      "source_text": "Okay, my apartment is across from a big department store.",
+      "candidate": "Vale, mi apartamento est\u00E1 enfrente.",
+      "expected": "Fail",
+      "error_type": "dropped_content",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "omits key location detail \u0027across from a big department store\u0027"
+        ],
+        "explanation": "Candidate says apartment is opposite/in front but drops the material fact that it is across from a big department store.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:39.9844840Z",
+        "usage": {
+          "PromptTokens": 361,
+          "CompletionTokens": 193,
+          "TotalTokens": 554
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022omits key location detail \u0027across from a big department store\u0027\u0022], \u0022explanation\u0022: \u0022Candidate says apartment is opposite/in front but drops the material fact that it is across from a big department store.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-17-fpc-002",
+      "source_text": "Hi Anna! I\u0027m coming to your apartment. Where is your apartment?",
+      "candidate": "\u00A1Hola, Anna! Voy a tu apartamento.",
+      "expected": "Fail",
+      "error_type": "dropped_content",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Omits second sentence \u0027Where is your apartment?\u0027 - question about location is missing"
+        ],
+        "explanation": "Source asks two things: coming to apartment and where it is; candidate only translates the first, dropping the material question about location.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:40.9075424Z",
+        "usage": {
+          "PromptTokens": 365,
+          "CompletionTokens": 184,
+          "TotalTokens": 549
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Omits second sentence \u0027Where is your apartment?\u0027 - question about location is missing\u0022], \u0022explanation\u0022: \u0022Source asks two things: coming to apartment and where it is; candidate only translates the first, dropping the material question about location.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-18-seg-002",
+      "source_text": "We need one more take.",
+      "candidate": "Necesitamos una toma m\u00E1s antes de comer.",
+      "expected": "Fail",
+      "error_type": "added_content",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "added temporal condition \u0027antes de comer\u0027 (before eating) not present in source"
+        ],
+        "explanation": "Source only states need for one more take; candidate adds extra information about eating that changes temporal scope.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:42.0644235Z",
+        "usage": {
+          "PromptTokens": 358,
+          "CompletionTokens": 244,
+          "TotalTokens": 602
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022added temporal condition \u0027antes de comer\u0027 (before eating) not present in source\u0022], \u0022explanation\u0022: \u0022Source only states need for one more take; candidate adds extra information about eating that changes temporal scope.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-19-voa10-006",
+      "source_text": "Okay. See you soon.",
+      "candidate": "Vale. Nos vemos pronto en el caf\u00E9.",
+      "expected": "Fail",
+      "error_type": "added_content",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "added location \u0027en el caf\u00E9\u0027 not in source"
+        ],
+        "explanation": "Candidate adds a specific location \u0027en el caf\u00E9\u0027 that is not present in the source \u0027See you soon\u0027, changing the material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:43.0915261Z",
+        "usage": {
+          "PromptTokens": 356,
+          "CompletionTokens": 220,
+          "TotalTokens": 576
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022added location \u0027en el caf\u00E9\u0027 not in source\u0022], \u0022explanation\u0022: \u0022Candidate adds a specific location \u0027en el caf\u00E9\u0027 that is not present in the source \u0027See you soon\u0027, changing the material meaning.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-20-seg-002",
+      "source_text": "We need one more take.",
+      "candidate": "Quiz\u00E1 podr\u00EDamos hacer una toma m\u00E1s.",
+      "expected": "Fail",
+      "error_type": "modality",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "modality changed from necessity \u0027need\u0027 to tentative possibility \u0027quiz\u00E1 podr\u00EDamos\u0027"
+        ],
+        "explanation": "Source states necessity for one more take, while candidate reframes as a tentative suggestion \u0027maybe we could\u0027, altering modality and adding uncertainty.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:46.0441796Z",
+        "usage": {
+          "PromptTokens": 356,
+          "CompletionTokens": 618,
+          "TotalTokens": 974
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022modality changed from necessity \u0027need\u0027 to tentative possibility \u0027quiz\u00E1 podr\u00EDamos\u0027\u0022], \u0022explanation\u0022: \u0022Source states necessity for one more take, while candidate reframes as a tentative suggestion \u0027maybe we could\u0027, altering modality and adding uncertainty.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-21-meet-002",
+      "source_text": "I love having my friends over. Come on!",
+      "candidate": "Tengo que recibir a mis amigos en casa. \u00A1Vamos!",
+      "expected": "Fail",
+      "error_type": "modality",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "modality changed from enjoyment/liking (\u0027I love\u0027) to obligation (\u0027Tengo que\u0027 = I have to)"
+        ],
+        "explanation": "Source expresses liking/enjoyment of hosting friends, candidate expresses obligation to host them, changing the modality and intent.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:47.1091328Z",
+        "usage": {
+          "PromptTokens": 364,
+          "CompletionTokens": 212,
+          "TotalTokens": 576
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022modality changed from enjoyment/liking (\u0027I love\u0027) to obligation (\u0027Tengo que\u0027 = I have to)\u0022], \u0022explanation\u0022: \u0022Source expresses liking/enjoyment of hosting friends, candidate expresses obligation to host them, changing the modality and intent.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-22-seg-008",
+      "source_text": "We will see you on the next stage.",
+      "candidate": "Quiz\u00E1 le veamos en la pr\u00F3xima etapa.",
+      "expected": "Fail",
+      "error_type": "modality",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Adds modality/uncertainty \u0027Quiz\u00E1\u0027 (perhaps) not in source; changes definite future \u0027will see\u0027 to possible \u0027maybe we will see\u0027"
+        ],
+        "explanation": "Source is a definite future statement, candidate introduces uncertainty with \u0027Quiz\u00E1\u0027, changing modality and material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:48.5856312Z",
+        "usage": {
+          "PromptTokens": 360,
+          "CompletionTokens": 255,
+          "TotalTokens": 615
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Adds modality/uncertainty \u0027Quiz\u00E1\u0027 (perhaps) not in source; changes definite future \u0027will see\u0027 to possible \u0027maybe we will see\u0027\u0022], \u0022explanation\u0022: \u0022Source is a definite future statement, candidate introduces uncertainty with \u0027Quiz\u00E1\u0027, changing modality and material meaning.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-23-seg-006",
+      "source_text": "Where are we shooting tomorrow?",
+      "candidate": "\u00BFD\u00F3nde rodamos hoy?",
+      "expected": "Fail",
+      "error_type": "time",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "temporal reference changed: \u0027tomorrow\u0027 -\u003E \u0027hoy\u0027 (today)"
+        ],
+        "explanation": "Candidate changes the time from \u0027tomorrow\u0027 to \u0027today\u0027 (hoy), which is a material date/time difference.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:49.7842710Z",
+        "usage": {
+          "PromptTokens": 352,
+          "CompletionTokens": 224,
+          "TotalTokens": 576
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022temporal reference changed: \u0027tomorrow\u0027 -\u003E \u0027hoy\u0027 (today)\u0022], \u0022explanation\u0022: \u0022Candidate changes the time from \u0027tomorrow\u0027 to \u0027today\u0027 (hoy), which is a material date/time difference.\u0022}"
+      }
+    },
+    {
+      "id": "seeded-24-seg-007",
+      "source_text": "Thank you for joining us today.",
+      "candidate": "Gracias por acompa\u00F1arnos ayer.",
+      "expected": "Fail",
+      "error_type": "time",
+      "outcome": "Caught",
+      "gate": {
+        "verdict": "Fail",
+        "issues": [
+          "Temporal reference altered: \u0027today\u0027 translated as \u0027ayer\u0027 (yesterday)"
+        ],
+        "explanation": "Candidate changes the time reference from \u0027today\u0027 to \u0027yesterday\u0027, which alters material meaning.",
+        "model_id": "muse-spark-1.1",
+        "prompt_template_version": "meaning-v1",
+        "timestamp_utc": "2026-10-31T19:37:50.5812757Z",
+        "usage": {
+          "PromptTokens": 354,
+          "CompletionTokens": 191,
+          "TotalTokens": 545
+        },
+        "raw_content": "{\u0022verdict\u0022: \u0022fail\u0022, \u0022issues\u0022: [\u0022Temporal reference altered: \u0027today\u0027 translated as \u0027ayer\u0027 (yesterday)\u0022], \u0022explanation\u0022: \u0022Candidate changes the time reference from \u0027today\u0027 to \u0027yesterday\u0027, which alters material meaning.\u0022}"
+      }
+    }
+  ]
+}
