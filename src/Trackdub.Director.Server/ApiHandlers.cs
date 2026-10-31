@@ -1,0 +1,79 @@
+using System.Text.Json;
+using Trackdub.Director.Core;
+using static ApiResults;
+using static AuditionOutputs;
+using static RequestValidation;
+
+// Runs the QA and audition pipelines for their endpoints and maps failures to HTTP results.
+internal static class ApiHandlers
+{
+    // Reads a request body. Malformed JSON or invalid content becomes a 400 result instead of an exception.
+    internal static async Task<(T? Value, IResult? Error)> ReadOrBadRequestAsync<T>(Func<Task<T?>> read)
+        where T : class
+    {
+        try
+        {
+            return (await read().ConfigureAwait(false), null);
+        }
+        catch (JsonException ex)
+        {
+            return (null, Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" }));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return (null, Results.BadRequest(new { error = ex.Message }));
+        }
+    }
+
+    internal static async Task<IResult> RunAuditionAsync(MetaClient client, ITtsProvider tts, AuditionApiRequest req, CancellationToken ct)
+    {
+        string from = ResolveLanguage(req.SourceLanguage, "en");
+        string to = ResolveLanguage(req.TargetLanguage, "es");
+
+        try
+        {
+            var service = new AuditionService(client, tts, QaOptions.FromEnvironment());
+            AuditionReport report = await service.RunAsync(req.Segments, from, to, ct).ConfigureAwait(false);
+            await TryWriteAuditionOutputsAsync(report, ct).ConfigureAwait(false);
+            return Results.Json(report);
+        }
+        catch (TtsApiException ex)
+        {
+            return MapTtsException(ex);
+        }
+        catch (MetaApiException ex)
+        {
+            return MapMetaException(ex);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    internal static async Task<IResult> RunQaAsync(MetaClient client, QaOptions options, QaApiRequest req, string from, string to, CancellationToken ct)
+    {
+        try
+        {
+            var qaService = new QaService(client, options);
+
+            // Convert to QaService's input shape (already matches)
+            IReadOnlyList<QaSegmentInput> segments = req.Segments.Select(s => new QaSegmentInput(s.Id, s.Text, s.DurationSeconds)).ToArray();
+
+            QaReport report = await qaService.RunAsync(segments, from, to, ct).ConfigureAwait(false);
+            return Results.Json(report);
+        }
+        catch (MetaApiException ex)
+        {
+            return MapMetaException(ex);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+}

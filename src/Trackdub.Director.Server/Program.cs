@@ -76,18 +76,10 @@ app.MapGet("/api/models", async (MetaClient client, CancellationToken ct) =>
 
 app.MapPost("/api/translate", async (HttpRequest request, TranslationService translationService, CancellationToken ct) =>
 {
-    TranslateRequest? req;
-    try
+    var (req, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadTranslateRequestAsync(request, ct));
+    if (readError is not null)
     {
-        req = await ReadTranslateRequestAsync(request, ct).ConfigureAwait(false);
-    }
-    catch (JsonException ex)
-    {
-        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
+        return readError;
     }
 
     if (req?.Segments is not { Count: > 0 })
@@ -120,18 +112,10 @@ app.MapPost("/api/translate", async (HttpRequest request, TranslationService tra
 
 app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, CancellationToken ct) =>
 {
-    QaApiRequest? req;
-    try
+    var (req, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadQaRequestAsync(request, ct));
+    if (readError is not null)
     {
-        req = await ReadQaRequestAsync(request, ct).ConfigureAwait(false);
-    }
-    catch (JsonException ex)
-    {
-        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
+        return readError;
     }
 
     if (req?.Segments is not { Count: > 0 })
@@ -158,7 +142,7 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
 
     try
     {
-        return await RunQaAsync(client, options, req, from, to, ct).ConfigureAwait(false);
+        return await ApiHandlers.RunQaAsync(client, options, req, from, to, ct).ConfigureAwait(false);
     }
     finally
     {
@@ -170,18 +154,10 @@ app.MapPost("/api/qa", async (HttpRequest request, MetaClient client, Cancellati
 });
 app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextService sceneService, CancellationToken ct) =>
 {
-    SceneSegmentInput[]? segments;
-    try
+    var (segments, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadSceneRequestAsync(request, ct));
+    if (readError is not null)
     {
-        segments = await ReadSceneRequestAsync(request, ct).ConfigureAwait(false);
-    }
-    catch (JsonException ex)
-    {
-        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
+        return readError;
     }
 
     if (segments is null || segments.Length == 0)
@@ -212,18 +188,10 @@ app.MapPost("/api/scene-context", async (HttpRequest request, SceneContextServic
 
 app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient client, CancellationToken ct) =>
 {
-    AdaptationApiRequest? req;
-    try
+    var (req, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadAdaptationRequestAsync(request, ct));
+    if (readError is not null)
     {
-        req = await ReadAdaptationRequestAsync(request, ct).ConfigureAwait(false);
-    }
-    catch (JsonException ex)
-    {
-        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
+        return readError;
     }
 
     if (req is null || req.Segments.Count == 0)
@@ -258,18 +226,10 @@ app.MapPost("/api/director-adaptation", async (HttpRequest request, MetaClient c
 
 app.MapPost("/api/audition", async (HttpRequest request, MetaClient client, ITtsProvider tts, CancellationToken ct) =>
 {
-    AuditionApiRequest? req;
-    try
+    var (req, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadAuditionRequestAsync(request, ct));
+    if (readError is not null)
     {
-        req = await ReadAuditionRequestAsync(request, ct).ConfigureAwait(false);
-    }
-    catch (JsonException ex)
-    {
-        return Results.BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
+        return readError;
     }
 
     if (req is null || req.Segments.Count == 0)
@@ -283,7 +243,7 @@ app.MapPost("/api/audition", async (HttpRequest request, MetaClient client, ITts
         return Results.BadRequest(new { error = validationError });
     }
 
-    return await RunAuditionAsync(client, tts, req, ct).ConfigureAwait(false);
+    return await ApiHandlers.RunAuditionAsync(client, tts, req, ct).ConfigureAwait(false);
 });
 
 // SPA fallback: for non-/api routes, serve index.html if it exists (after a prod build)
@@ -321,100 +281,8 @@ app.MapFallback(async (HttpContext ctx) =>
 
 app.Run();
 
+
 // For WebApplicationFactory in tests
 public partial class Program
 {
-    private static async Task<IResult> RunAuditionAsync(MetaClient client, ITtsProvider tts, AuditionApiRequest req, CancellationToken ct)
-    {
-        string from = ResolveLanguage(req.SourceLanguage, "en");
-        string to = ResolveLanguage(req.TargetLanguage, "es");
-
-        try
-        {
-            var service = new AuditionService(client, tts, QaOptions.FromEnvironment());
-            AuditionReport report = await service.RunAsync(req.Segments, from, to, ct).ConfigureAwait(false);
-            await TryWriteAuditionOutputsAsync(report, ct).ConfigureAwait(false);
-            return Results.Json(report);
-        }
-        catch (TtsApiException ex)
-        {
-            return MapTtsException(ex);
-        }
-        catch (MetaApiException ex)
-        {
-            return MapMetaException(ex);
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-    }
-
-    private static async Task<IResult> RunQaAsync(MetaClient client, QaOptions options, QaApiRequest req, string from, string to, CancellationToken ct)
-    {
-        try
-        {
-            var qaService = new QaService(client, options);
-
-            // Convert to QaService's input shape (already matches)
-            IReadOnlyList<QaSegmentInput> segments = req.Segments.Select(s => new QaSegmentInput(s.Id, s.Text, s.DurationSeconds)).ToArray();
-
-            QaReport report = await qaService.RunAsync(segments, from, to, ct).ConfigureAwait(false);
-            return Results.Json(report);
-        }
-        catch (MetaApiException ex)
-        {
-            return MapMetaException(ex);
-        }
-        catch (ArgumentOutOfRangeException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-    }
-
 }
-
-// DTOs
-
-internal sealed record StatusResponse(
-    [property: JsonPropertyName("hasKey")] bool HasKey,
-    [property: JsonPropertyName("model")] string Model,
-    [property: JsonPropertyName("baseUrl")] string BaseUrl,
-    [property: JsonPropertyName("reasoningEffort")] string ReasoningEffort);
-
-internal sealed record ModelDto(
-    [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("object")] string Object,
-    [property: JsonPropertyName("created")] long Created,
-    [property: JsonPropertyName("owned_by")] string OwnedBy);
-
-internal sealed record TranslateRequest(
-    IReadOnlyList<TranslationSegmentInput> Segments,
-    string? SourceLanguage,
-    string? TargetLanguage);
-
-internal sealed record QaApiRequest(
-    IReadOnlyList<QaSegmentInput> Segments,
-    string? SourceLanguage,
-    string? TargetLanguage,
-    QaOptionsDto? Options);
-
-internal sealed record AdaptationApiRequest(
-    IReadOnlyList<DirectorAdaptationSegmentInput> Segments,
-    string? SourceLanguage,
-    string? TargetLanguage);
-
-internal sealed record AuditionApiRequest(
-    IReadOnlyList<AuditionSegmentInput> Segments,
-    string? SourceLanguage,
-    string? TargetLanguage);
-
-internal sealed record QaOptionsDto(
-    int? MaxAttempts,
-    double? ToleranceFraction,
-    double? TargetCharactersPerSecond,
-    string? ReasoningEffort);
