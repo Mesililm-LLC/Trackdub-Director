@@ -569,6 +569,7 @@ function AuditionPanel({ seg, audition }: { seg: SegmentInput; audition: Auditio
         Audition: {audition.cast ? `Cast — take #${audition.winner_take_number} (${audition.winner_file_name ?? "—"})` : "Uncast"} · Speaker:{" "}
         {audition.speaker_id ?? "—"} · Voice: {audition.cast_voice ? `${audition.cast_voice.voice_name} (${audition.cast_voice.voice_id})` : "—"}
       </div>
+      {audition.note && <div className="token-usage">{audition.note}</div>}
       <div className="attempt-row attempt-row-header">
         <span>#</span>
         <span>Kind</span>

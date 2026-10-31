@@ -261,7 +261,8 @@ public sealed class AuditionService
             [],
             Cast: false,
             WinnerTakeNumber: null,
-            WinnerFileName: null);
+            WinnerFileName: null,
+            Note: run.MetaCapHit ? "Not checked: the Meta call budget ran out before this segment's QA." : null);
     }
 
     private async Task<AuditionSegmentReport> ProcessSegmentAsync(
@@ -401,7 +402,10 @@ public sealed class AuditionService
     {
         if (take.MeaningVerdict != MeaningVerdict.Pass)
         {
-            return "Meaning gate did not pass; not synthesized.";
+            // NotEvaluated with the Meta cap hit means the budget ran out before this take's meaning check.
+            return run.MetaCapHit && take.MeaningVerdict == MeaningVerdict.NotEvaluated
+                ? "Meta call budget ran out before the meaning check; not synthesized."
+                : "Meaning gate did not pass; not synthesized.";
         }
 
         if (take.Cast is null)
