@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import App from "./App";
 
@@ -162,6 +162,45 @@ function mockFetchForQa() {
 describe("App smoke", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", mockFetchForQa());
+  });
+
+  it("shows each visual result for duplicate segment ids in input order", async () => {
+    const provenance = { model_id: "model", endpoint_host: "host", timestamp_utc: "time", prompt_template_version: "v1" };
+    const visual = { segments: [
+      { id: "same", status: "Failed", error: "first result", provenance, usage: { total_tokens: 0 }, image_calls: 0 },
+      { id: "same", status: "Failed", error: "second result", provenance, usage: { total_tokens: 0 }, image_calls: 0 },
+    ] };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      return new Response(JSON.stringify(url.includes("/api/status") ? statusOk : visual), { status: 200 });
+    }));
+    const { container } = render(<App />);
+    const file = new File([], "segments.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => JSON.stringify([{ id: "same", text: "First" }, { id: "same", text: "Second" }]) });
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+    await screen.findByText("First");
+    fireEvent.click(screen.getByRole("button", { name: "Run Visual" }));
+    await screen.findByText(/first result/);
+    const cards = screen.getAllByRole("listitem");
+    expect(within(cards[0]).getByText(/first result/)).toBeInTheDocument();
+    expect(within(cards[1]).getByText(/second result/)).toBeInTheDocument();
+  });
+
+  it.each([false, true])("reports visual errors only for current requests (invalidated: %s)", async (invalidated) => {
+    let rejectVisual!: (reason: Error) => void;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (input.toString().includes("/api/status")) return Promise.resolve(new Response(JSON.stringify(statusOk), { status: 200 }));
+      return new Promise<Response>((_, reject) => { rejectVisual = reject; });
+    }));
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Run Visual" }));
+    if (invalidated) fireEvent.click(screen.getByRole("button", { name: "Load sample" }));
+    await act(async () => { rejectVisual(new Error("visual request failed")); });
+    if (invalidated) {
+      expect(screen.queryByText("visual request failed")).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByText("visual request failed")).toBeInTheDocument();
+    }
   });
 
   it("renders line list from sample and QA summary after Run QA", async () => {
@@ -530,6 +569,68 @@ describe("App smoke", () => {
     expect(within(seg2).getByText(/Audition: Uncast/)).toBeInTheDocument();
     // Only the column header matches "Winner"; no take is marked.
     expect(within(seg2).getAllByText("Winner")).toHaveLength(1);
+  });
+
+  it("shows before/after frames with usage and outside_box_diff after Run Visual", async () => {
+    const visualMock = {
+      segments: [
+        {
+          id: "seg-001",
+          status: "Localised",
+          localised_image_data_url: "data:image/png;base64,bG9jYWxpc2Vk",
+          box: { x1: 449, y1: 145, x2: 751, y2: 534 },
+          source_text: "COFFEE SHOP",
+          target_text: "CAFETERÍA",
+          outside_box_diff: 0,
+          error: null,
+          provenance: { model_id: "muse-image-1.0", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-31T00:00:00Z", prompt_template_version: "image-edit-v1" },
+          usage: { prompt_tokens: 11868, completion_tokens: 637, total_tokens: 12505 },
+          image_calls: 1,
+        },
+        {
+          id: "seg-002",
+          status: "Failed",
+          localised_image_data_url: null,
+          box: { x1: 449, y1: 145, x2: 751, y2: 534 },
+          source_text: "COFFEE SHOP",
+          target_text: "CAFETERÍA",
+          outside_box_diff: null,
+          error: "Meta Model API response carried no image (missing image_generation_call result).",
+          provenance: { model_id: "muse-image-1.0", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-31T00:00:00Z", prompt_template_version: "image-edit-v1" },
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          image_calls: 1,
+        },
+      ],
+      usage_total: { prompt_tokens: 11868, completion_tokens: 637, total_tokens: 12505 },
+      image_calls_total: 2,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/visual-localisation")) return new Response(JSON.stringify(visualMock), { status: 200 });
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Visual" }).click();
+    await waitFor(() => expect(screen.getByText("Visual: Localised")).toBeInTheDocument());
+
+    const seg1 = getCard("seg-001");
+    // Source and localised frames render side by side with the target text.
+    expect(within(seg1).getByText(/Before · COFFEE SHOP/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/After · CAFETERÍA/)).toBeInTheDocument();
+    expect(within(seg1).getByAltText("Localised frame for seg-001")).toHaveAttribute("src", "data:image/png;base64,bG9jYWxpc2Vk");
+    // Usage and the machine-checked diff are shown.
+    expect(within(seg1).getByText(/Visual gate: model muse-image-1\.0 · template image-edit-v1/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/tokens 12505 · image calls 1 · outside_box_diff 0/)).toBeInTheDocument();
+
+    // A failed segment shows the reason and never an unmodified frame.
+    const seg2 = getCard("seg-002");
+    expect(within(seg2).getByText("Visual: Failed")).toBeInTheDocument();
+    expect(within(seg2).getByText(/carried no image/)).toBeInTheDocument();
+    expect(within(seg2).queryByAltText("Localised frame for seg-002")).not.toBeInTheDocument();
   });
 
   it("shows read-only scene context after Run Scene", async () => {

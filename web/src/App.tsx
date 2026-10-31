@@ -6,6 +6,7 @@ import {
   postQa,
   postSceneContext,
   postTranslate,
+  postVisualLocalisation,
   type DirectorAdaptationBatch,
   type DirectorAdaptationInput,
   type DirectorAdaptationSegmentResult,
@@ -27,13 +28,15 @@ import {
   type SegmentInput,
   type StatusResponse,
   type TranslateBatch,
+  type VisualLocalisationBatch,
+  type VisualLocalisationSegmentResult,
 } from "./api";
 import sampleSegments from "./sampleSegments.json";
 
 const DEFAULT_FROM = "en";
 const DEFAULT_TO = "es";
 
-type BusyState = "translate" | "qa" | "scene" | "director" | "audition" | null;
+type BusyState = "translate" | "qa" | "scene" | "director" | "audition" | "visual" | null;
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
@@ -77,6 +80,7 @@ function parseSegments(text: string): SegmentInput[] {
 interface LineCardProps {
   director: DirectorAdaptationSegmentResult | undefined;
   audition: AuditionSegmentReport | undefined;
+  visual: VisualLocalisationSegmentResult | undefined;
   seg: SegmentInput;
   q: QaSegmentReport | undefined;
   translated: string | null;
@@ -601,11 +605,12 @@ function AuditionPanel({ seg, audition }: { seg: SegmentInput; audition: Auditio
   );
 }
 
-function LineMeta({ q, scene, view, translated }: {
+function LineMeta({ q, scene, view, translated, visual }: {
   q: QaSegmentReport | undefined;
   scene: SceneSegmentResult | undefined;
   view: LineView;
   translated: string | null;
+  visual: VisualLocalisationSegmentResult | undefined;
 }) {
   return (
     <div className="line-meta">
@@ -613,6 +618,7 @@ function LineMeta({ q, scene, view, translated }: {
       <StatusPills q={q} shownAttempt={view.shownAttempt} verdict={view.verdict} firstVerdict={view.firstVerdict} translated={translated} />
       <span className="attempts">Attempts: {view.attemptCount || "—"}</span>
       {scene && <SceneStatusPill scene={scene} />}
+      {visual && <VisualStatusPill visual={visual} />}
       {q && q.revisions.length > 0 && <span className="revisions-count">Revisions: {q.revisions.length}</span>}
     </div>
   );
@@ -626,7 +632,51 @@ function AttemptToggle({ isExpanded, onToggle }: { isExpanded: boolean; onToggle
   );
 }
 
-function LineCard({ seg, q, translated, scene, director, audition, isExpanded, onToggle }: LineCardProps) {
+function VisualStatusPill({ visual }: { visual: VisualLocalisationSegmentResult }) {
+  const statusClass = visual.status === "Localised" ? "verdict-pass" : "verdict-fail";
+  return (
+    <span className={`verdict ${statusClass}`} title={`Visual localisation (${visual.provenance.model_id}, ${visual.provenance.prompt_template_version})`}>
+      Visual: {visual.status}
+    </span>
+  );
+}
+
+function VisualPanel({ seg, visual }: { seg: SegmentInput; visual: VisualLocalisationSegmentResult }) {
+  return (
+    <div className="attempts-panel" aria-label={`Visual localisation for ${seg.id}`}>
+      {visual.status === "Failed" ? (
+        <div className="meaning-issues">
+          <strong>Visual localisation failed:</strong> {visual.error ?? "unknown error"}
+        </div>
+      ) : (
+        <div className="director-grid">
+          <div>
+            <div className="director-label">Before · {visual.source_text ?? "—"}</div>
+            {seg.frame_image_data_url ? (
+              <img className="visual-frame" src={seg.frame_image_data_url} alt={`Source frame for ${seg.id}`} />
+            ) : (
+              <div className="token-usage">No source frame</div>
+            )}
+          </div>
+          <div>
+            <div className="director-label">After · {visual.target_text ?? "—"}</div>
+            {visual.localised_image_data_url ? (
+              <img className="visual-frame" src={visual.localised_image_data_url} alt={`Localised frame for ${seg.id}`} />
+            ) : (
+              <div className="token-usage">No localised frame</div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="token-usage">
+        Visual gate: model {visual.provenance.model_id} · template {visual.provenance.prompt_template_version} · {visual.provenance.timestamp_utc} · tokens{" "}
+        {visual.usage.total_tokens} · image calls {visual.image_calls} · outside_box_diff {visual.outside_box_diff ?? "—"}
+      </div>
+    </div>
+  );
+}
+
+function LineCard({ seg, q, translated, scene, director, audition, visual, isExpanded, onToggle }: LineCardProps) {
   const view = deriveLineView(seg, q, translated);
 
   return (
@@ -637,13 +687,14 @@ function LineCard({ seg, q, translated, scene, director, audition, isExpanded, o
         <div className="line-translation" title={view.displayTranslation}>
           {view.displayTranslation}
         </div>
-        <LineMeta q={q} scene={scene} view={view} translated={translated} />
+        <LineMeta q={q} scene={scene} view={view} translated={translated} visual={visual} />
       </div>
       {q && <AttemptToggle isExpanded={isExpanded} onToggle={onToggle} />}
       {q && isExpanded && <AttemptsPanel q={q} shownAttempt={view.shownAttempt} />}
       {scene && <ScenePanel seg={seg} scene={scene} />}
       {director && director.status !== "NotRequested" && <DirectorPanel seg={seg} director={director} />}
       {audition && <AuditionPanel seg={seg} audition={audition} />}
+      {visual && <VisualPanel seg={seg} visual={visual} />}
     </article>
   );
 }
@@ -750,9 +801,10 @@ interface ToolbarProps {
   onScene: () => Promise<void>;
   onDirector: () => Promise<void>;
   onAudition: () => Promise<void>;
+  onVisual: () => Promise<void>;
 }
 
-function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadSample, onTranslate, onQa, onScene, onDirector, onAudition }: ToolbarProps) {
+function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadSample, onTranslate, onQa, onScene, onDirector, onAudition, onVisual }: ToolbarProps) {
   const disabled = busy !== null || segments.length === 0;
   return (
     <div className="toolbar">
@@ -771,6 +823,9 @@ function Toolbar({ segments, from, to, busy, fileInputRef, onFileChange, onLoadS
         </button>
         <button type="button" className="btn btn-primary" onClick={() => void onAudition()} disabled={disabled}>
           {busy === "audition" ? "Running Audition…" : "Run Audition"}
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => void onVisual()} disabled={disabled}>
+          {busy === "visual" ? "Running Visual…" : "Run Visual"}
         </button>
         <span className="toolbar-hint">
           {segments.length} segments · {from} → {to}
@@ -796,22 +851,24 @@ interface LineListProps {
   sceneById: Map<number, SceneSegmentResult> | null;
   directorById: Map<string, DirectorAdaptationSegmentResult> | null;
   auditionById: Map<string, AuditionSegmentReport> | null;
+  visualById: Map<number, VisualLocalisationSegmentResult> | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
 }
 
-function LineList({ segments, qaById, batchById, sceneById, directorById, auditionById, expanded, onToggle }: LineListProps) {
+function LineList({ segments, qaById, batchById, sceneById, directorById, auditionById, visualById, expanded, onToggle }: LineListProps) {
   return (
     <div className="lines" role="list">
       {segments.map((seg, idx) => (
         <LineCard
-          key={seg.id}
+          key={idx}
           seg={seg}
           q={qaById?.get(seg.id)}
           translated={batchById?.get(seg.id) ?? null}
           scene={sceneById?.get(idx)}
           director={directorById?.get(seg.id)}
           audition={auditionById?.get(seg.id)}
+          visual={visualById?.get(idx)}
           isExpanded={expanded[seg.id] ?? false}
           onToggle={() => onToggle(seg.id)}
         />
@@ -868,6 +925,7 @@ function useReports() {
   const [scene, setScene] = useState<SceneContextBatch | null>(null);
   const [director, setDirector] = useState<DirectorAdaptationBatch | null>(null);
   const [audition, setAudition] = useState<AuditionReport | null>(null);
+  const [visual, setVisual] = useState<VisualLocalisationBatch | null>(null);
 
   const reset = useCallback(() => {
     setQa(null);
@@ -875,6 +933,7 @@ function useReports() {
     setScene(null);
     setDirector(null);
     setAudition(null);
+    setVisual(null);
   }, []);
   const sceneById = useMemo(() => (scene ? new Map(scene.segments.map((s, i) => [i, s] as const)) : null), [scene]);
   const qaById = useMemo(() => (qa ? new Map(qa.segments.map((s) => [s.id, s] as const)) : null), [qa]);
@@ -882,8 +941,9 @@ function useReports() {
 
   const directorById = useMemo(() => (director ? new Map(director.segments.map((s) => [s.id, s] as const)) : null), [director]);
   const auditionById = useMemo(() => (audition ? new Map(audition.segments.map((s) => [s.id, s] as const)) : null), [audition]);
+  const visualById = useMemo(() => (visual ? new Map(visual.segments.map((s, i) => [i, s] as const)) : null), [visual]);
 
-  return { qa, setQa, batch, setBatch, scene, setScene, director, setDirector, audition, setAudition, reset, qaById, sceneById, batchById, directorById, auditionById };
+  return { qa, setQa, batch, setBatch, scene, setScene, director, setDirector, audition, setAudition, visual, setVisual, reset, qaById, sceneById, batchById, directorById, auditionById, visualById };
 }
 
 function useSegments(onReset: () => void, setError: React.Dispatch<React.SetStateAction<string | null>>) {
@@ -933,6 +993,7 @@ interface ActionsContext {
   setScene: (scene: SceneContextBatch) => void;
   setDirector: (director: DirectorAdaptationBatch) => void;
   setAudition: (audition: AuditionReport) => void;
+  setVisual: (visual: VisualLocalisationBatch) => void;
   qaById: Map<string, QaSegmentReport> | null;
   batchById: Map<string, string> | null;
   sceneById: Map<number, SceneSegmentResult> | null;
@@ -940,9 +1001,10 @@ interface ActionsContext {
   sceneRequestRef: React.RefObject<number>;
   directorRequestRef: React.RefObject<number>;
   auditionRequestRef: React.RefObject<number>;
+  visualRequestRef: React.RefObject<number>;
 }
 
-function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, setAudition, qaById, batchById, sceneById, setError, sceneRequestRef, directorRequestRef, auditionRequestRef }: ActionsContext) {
+function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setScene, setDirector, setAudition, setVisual, qaById, batchById, sceneById, setError, sceneRequestRef, directorRequestRef, auditionRequestRef, visualRequestRef }: ActionsContext) {
   const [busy, setBusy] = useState<BusyState>(null);
 
   const run = useCallback(async (kind: Exclude<BusyState, null>, action: () => Promise<void>) => {
@@ -1019,7 +1081,19 @@ function useActions({ segments, from, to, refreshStatus, setBatch, setQa, setSce
     });
   }, [run, segments, from, to, setAudition, auditionRequestRef]);
 
-  return { busy, runTranslate, runQa, runScene, runDirector, runAudition };
+  const runVisual = useCallback(async () => {
+    const requestId = ++visualRequestRef.current;
+    await run("visual", async () => {
+      try {
+        const res = await postVisualLocalisation(segments);
+        if (requestId === visualRequestRef.current) setVisual(res);
+      } catch (error) {
+        if (requestId === visualRequestRef.current) throw error;
+      }
+    });
+  }, [run, segments, setVisual, visualRequestRef]);
+
+  return { busy, runTranslate, runQa, runScene, runDirector, runAudition, runVisual };
 }
 
 export default function App() {
@@ -1029,11 +1103,13 @@ export default function App() {
   const sceneRequestRef = useRef(0);
   const directorRequestRef = useRef(0);
   const auditionRequestRef = useRef(0);
+  const visualRequestRef = useRef(0);
   const onReset = useCallback(() => {
     reports.reset();
     sceneRequestRef.current += 1;
     directorRequestRef.current += 1;
     auditionRequestRef.current += 1;
+    visualRequestRef.current += 1;
   }, [reports]);
   const input = useSegments(onReset, setError);
   const actions = useActions({
@@ -1046,6 +1122,7 @@ export default function App() {
     setScene: reports.setScene,
     setDirector: reports.setDirector,
     setAudition: reports.setAudition,
+    setVisual: reports.setVisual,
     qaById: reports.qaById,
     batchById: reports.batchById,
     sceneById: reports.sceneById,
@@ -1053,6 +1130,7 @@ export default function App() {
     sceneRequestRef,
     directorRequestRef,
     auditionRequestRef,
+    visualRequestRef,
   });
 
   return (
@@ -1072,6 +1150,7 @@ export default function App() {
           onScene={actions.runScene}
           onDirector={actions.runDirector}
           onAudition={actions.runAudition}
+          onVisual={actions.runVisual}
         />
         {reports.audition && <AuditionBudgetNotice totals={reports.audition.totals} />}
         <LineList
@@ -1081,6 +1160,7 @@ export default function App() {
           sceneById={reports.sceneById}
           directorById={reports.directorById}
           auditionById={reports.auditionById}
+          visualById={reports.visualById}
           expanded={input.expanded}
           onToggle={input.toggle}
         />

@@ -137,6 +137,12 @@ internal static class RequestParsing
             ?? throw new InvalidOperationException("Invalid 'segments' array.");
     }
 
+    internal static async Task<VisualLocalisationSegmentInput[]?> ReadVisualLocalisationRequestAsync(HttpRequest http, CancellationToken ct)
+    {
+        SegmentBody<VisualLocalisationSegmentInput> body = await ReadSegmentBodyAsync<VisualLocalisationSegmentInput>(http, ct).ConfigureAwait(false);
+        return body.Segments;
+    }
+
     internal static async Task<AdaptationApiRequest?> ReadAdaptationRequestAsync(HttpRequest http, CancellationToken ct)
     {
         SegmentBody<DirectorAdaptationSegmentInput> body = await ReadSegmentBodyAsync<DirectorAdaptationSegmentInput>(http, ct).ConfigureAwait(false);

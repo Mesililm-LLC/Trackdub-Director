@@ -863,6 +863,25 @@ public sealed class ServerEndpointTests
         yield return new object[] { "/api/director-adaptation", "{\"segments\":[]}", "Request must include a non-empty 'segments' array of { id, text?, translation?, duration_seconds?, context?, director_adaptation? }." };
         yield return new object[] { "/api/director-adaptation", "{\"segments\":[{\"id\":\"\"}]}", "Each segment must have a non-empty 'id'." };
         yield return new object[] { "/api/director-adaptation", Segments(101), "At most 100 segments are allowed per request." };
+
+        yield return new object[] { "/api/visual-localisation", "{\"segments\":[]}", "Request must include a non-empty 'segments' array" };
+        yield return new object[] { "/api/visual-localisation", "{\"segments\":[null]}", "Each segment must have a non-empty 'id'." };
+        yield return new object[] { "/api/visual-localisation", "{\"segments\":[{\"id\":\" \"}]}", "Each segment must have a non-empty 'id'." };
+        yield return new object[] { "/api/visual-localisation", Segments(101), "At most 100 segments are allowed per request." };
+    }
+
+    [Fact]
+    public async Task Visual_localisation_accepts_limit_and_duplicate_ids_in_input_order()
+    {
+        using var factory = new ServerFactory(new DelegatingHandlerStub((_, _) => Task.FromResult(UpstreamError(HttpStatusCode.InternalServerError))));
+        using HttpClient client = factory.CreateClient();
+        string body = "{\"segments\":[" + string.Join(",", Enumerable.Repeat("{\"id\":\"same\"}", 100)) + "]}";
+
+        (HttpStatusCode status, JsonElement root) = await PostRawAsync(client, "/api/visual-localisation", body);
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(100, root.GetProperty("segments").GetArrayLength());
+        Assert.All(root.GetProperty("segments").EnumerateArray(), s => Assert.Equal("same", s.GetProperty("id").GetString()));
     }
 
     [Theory]

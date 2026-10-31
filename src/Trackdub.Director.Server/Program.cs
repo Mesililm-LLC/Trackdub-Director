@@ -18,6 +18,8 @@ builder.Services.AddTransient<TranslationService>(sp => new TranslationService(s
 builder.Services.AddTransient<SceneContextService>(sp => new SceneContextService(sp.GetRequiredService<MetaClient>()));
 // One provider for the process: it owns a 120-second client sized for audio synthesis.
 builder.Services.AddSingleton<ITtsProvider>(_ => new ElevenLabsTtsProvider());
+builder.Services.AddSingleton<MetaMuseImageClient>(sp => new MetaMuseImageClient(sp.GetRequiredService<HttpClient>()));
+builder.Services.AddTransient<VisualLocalisationService>(sp => new VisualLocalisationService(sp.GetRequiredService<MetaMuseImageClient>()));
 
 // JSON: keep defaults but ensure case-insensitive reads and respect JsonPropertyName attributes
 builder.Services.ConfigureHttpJsonOptions(opts =>
@@ -48,6 +50,7 @@ app.MapPost("/api/qa", ApiEndpoints.QaAsync);
 app.MapPost("/api/scene-context", ApiEndpoints.SceneContextAsync);
 app.MapPost("/api/director-adaptation", ApiEndpoints.DirectorAdaptationAsync);
 app.MapPost("/api/audition", ApiEndpoints.AuditionAsync);
+app.MapPost("/api/visual-localisation", ApiEndpoints.VisualLocalisationAsync);
 app.MapFallback(ApiEndpoints.FallbackAsync);
 
 app.Run();
