@@ -537,7 +537,10 @@ function AuditionTakeRow({ take }: { take: AuditionTake }) {
   return (
     <div className="attempt-row">
       <span>#{take.take_number}</span>
-      <span>{take.kind}</span>
+      <span>
+        {take.kind}
+        {take.speed_factor != null ? ` ×${take.speed_factor}` : ""}
+      </span>
       <span className="attempt-text">{take.text}</span>
       <span>
         {take.measured_seconds != null ? `${fmtSec(take.measured_seconds)} / ${fmtSec(take.window_seconds)}` : `— / ${fmtSec(take.window_seconds)}`}

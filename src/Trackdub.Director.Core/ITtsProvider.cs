@@ -29,8 +29,8 @@ public interface ITtsProvider
     /// <summary>List the account's voices (stock library selection happens in the audition service).</summary>
     Task<IReadOnlyList<TtsVoice>> ListVoicesAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Synthesize one text in one voice, pronounced as <paramref name="languageCode"/>. Text-only input: never any reference audio.</summary>
-    Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, CancellationToken cancellationToken = default);
+    /// <summary>Synthesize one text in one voice, pronounced as <paramref name="languageCode"/>. Text-only input: never any reference audio. <paramref name="speed"/>, when set, is the provider's speed setting (1.0 is normal); the returned audio is still measured, never estimated.</summary>
+    Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, double? speed = null, CancellationToken cancellationToken = default);
 
     /// <summary>Declared PCM parameters for raw (non-WAV-container) synthesis output.</summary>
     int PcmSampleRate { get; }

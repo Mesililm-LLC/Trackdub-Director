@@ -335,7 +335,7 @@ export type AuditionCastVoice = {
 
 export type AuditionTake = {
   take_number: number;
-  kind: string; // Initial | Revision
+  kind: string; // Initial | Revision | Alternate | SpeedVariant
   text: string;
   meaning_verdict: string; // Pass | Fail | Error | NotEvaluated
   meaning_issues: string[] | null;
@@ -350,6 +350,7 @@ export type AuditionTake = {
   translation_tokens: number;
   meaning_tokens: number;
   elevenlabs_characters: number;
+  speed_factor?: number | null; // set only on the speed-variant take
 };
 
 export type AuditionSegmentReport = {

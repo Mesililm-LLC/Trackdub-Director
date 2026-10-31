@@ -213,6 +213,86 @@ public sealed class MetaClient : IDisposable
     }
 
     /// <summary>
+    /// Alternate-phrasing call for the audition lane (template translate-variants-v1):
+    /// up to <see cref="VariantsRequest.Count"/> variants of the reference translation,
+    /// varying phrasing and length while preserving all names, numbers, and meaning.
+    /// Always sends reasoning_effort "low" and the default chat model (muse-spark-1.1),
+    /// matching the translation lane's probe-verified shape. The response must be strict
+    /// JSON {"variants":[...]}; malformed output fails closed with <see cref="MetaApiException"/>.
+    /// Variants that are blank or repeat the reference text are dropped, never returned.
+    /// </summary>
+    public async Task<VariantsCompletionResult> TranslateVariantsAsync(VariantsRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceText);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ReferenceTranslation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceLanguage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetLanguage);
+        if (request.Count < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "At least one variant must be requested.");
+        }
+
+        string sourceDisplay = LanguageDisplayName(request.SourceLanguage);
+        string targetDisplay = LanguageDisplayName(request.TargetLanguage);
+        string resolvedModel = MetaAuth.GetModel();
+        var payload = new ChatCompletionRequest(
+            resolvedModel,
+            [
+                new ChatMessage("system", $"You are a translation engine. Produce up to {request.Count} alternate {targetDisplay} phrasings of the given {sourceDisplay} line, based on the reference {targetDisplay} translation. Vary phrasing and length while preserving all names, numbers, and meaning exactly. Output strict JSON only, with no markdown fences and no commentary, using exactly this shape: {{\"variants\":[\"...\"]}}."),
+                new ChatMessage("user", $"Original {sourceDisplay}: {request.SourceText}\nReference {targetDisplay}: {request.ReferenceTranslation}\nAlternates wanted: {request.Count}"),
+            ],
+            "low");
+
+        using HttpRequestMessage httpRequest = CreateAuthorizedRequest(
+            HttpMethod.Post,
+            $"{MetaAuth.GetBaseUrl()}/chat/completions",
+            JsonSerializer.Serialize(payload, JsonOptions));
+        string body = await SendForBodyAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        ChatCompletionResponse? parsed = ParseChatResponse(new BodyText(body));
+        string content = ExtractContent(parsed, new BodyText(body));
+        string[] variants = ParseVariants(content, request.ReferenceTranslation, request.Count, new BodyText(body));
+        return new VariantsCompletionResult(variants, parsed?.Model ?? resolvedModel, ToUsage(parsed?.Usage));
+    }
+
+    private static string[] ParseVariants(string content, string referenceTranslation, int count, BodyText rawBody)
+    {
+        string json = content.Trim();
+        int start = json.IndexOf('{');
+        int end = json.LastIndexOf('}');
+        if (start < 0 || end <= start)
+        {
+            throw new MetaApiException($"Unexpected variants response shape: {Truncate(new BodyText(content))}");
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json[start..(end + 1)]);
+        }
+        catch (JsonException ex)
+        {
+            throw new MetaApiException($"Failed to parse variants response: {Truncate(new BodyText(content))}", ex);
+        }
+
+        using (doc)
+        {
+            if (!doc.RootElement.TryGetProperty("variants", out JsonElement variants) || variants.ValueKind != JsonValueKind.Array)
+            {
+                throw new MetaApiException($"Unexpected variants response shape: {Truncate(rawBody)}");
+            }
+
+            return variants.EnumerateArray()
+                .Where(v => v.ValueKind == JsonValueKind.String)
+                .Select(v => v.GetString()!.Trim())
+                .Where(v => v.Length > 0 && !string.Equals(v, referenceTranslation.Trim(), StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(count)
+                .ToArray();
+        }
+    }
+
+    /// <summary>
     /// Revision call for the QA bounce-back: shorten a translation to fit a timing window.
     /// Preserves meaning; instructs the model to keep the output under maxChars.
     /// When MeaningIssues is provided, they are injected as feedback to fix.
@@ -763,6 +843,19 @@ public sealed class MetaClient : IDisposable
         string CandidateTranslation,
         string SourceLanguage,
         string TargetLanguage);
+
+    public sealed record VariantsRequest(
+        string SourceText,
+        string ReferenceTranslation,
+        string SourceLanguage,
+        string TargetLanguage,
+        int Count);
+
+    /// <summary>Raw variants outcome: parsed alternate phrasings plus billed usage.</summary>
+    public sealed record VariantsCompletionResult(
+        string[] Variants,
+        string Model,
+        TokenUsage? Usage);
 
     private sealed record VisionChatRequest(
         [property: JsonPropertyName("model")] string Model,
