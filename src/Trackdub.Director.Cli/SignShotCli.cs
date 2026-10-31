@@ -269,10 +269,27 @@ internal static class SignShotCli
             return null;
         }
 
+        string? outputPath = TryGetFullPath(output);
+        string? videoPath = TryGetFullPath(values["--video"]);
+        if (outputPath is null || videoPath is null)
+        {
+            return "--output and --video must be valid file paths.";
+        }
+
         StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        return string.Equals(Path.GetFullPath(output), Path.GetFullPath(values["--video"]), comparison)
-            ? "--output must not be the input video."
-            : null;
+        return string.Equals(outputPath, videoPath, comparison) ? "--output must not be the input video." : null;
+    }
+
+    private static string? TryGetFullPath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
     }
 
     private static void PrintSummary(StaticShotReport report)
