@@ -45,6 +45,8 @@ public sealed record AuditionTakeReport(
     [property: JsonPropertyName("translation_tokens")] int TranslationTokens,
     [property: JsonPropertyName("meaning_tokens")] int MeaningTokens,
     [property: JsonPropertyName("elevenlabs_characters")] int ElevenLabsCharacters,
+    // Set only on the speed-variant take: the provider speed setting used for its synthesis.
+    [property: JsonPropertyName("speed_factor")] double? SpeedFactor = null,
     [property: JsonIgnore] byte[]? AudioBytes = null);
 
 public sealed record AuditionSegmentReport(

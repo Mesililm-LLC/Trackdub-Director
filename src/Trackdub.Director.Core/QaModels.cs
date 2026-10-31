@@ -19,6 +19,9 @@ public enum QaAttemptKind
 {
     Initial,
     Revision,
+    // Audition-only kinds: never produced by the QA lane itself.
+    Alternate,
+    SpeedVariant,
 }
 
 public sealed record QaAttemptReport(

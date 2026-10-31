@@ -91,6 +91,8 @@ public sealed class AuditionServiceTests
 
         public List<(string VoiceId, string Text)> SynthCalls { get; } = [];
 
+        public List<double?> SynthSpeeds { get; } = [];
+
         public int PcmSampleRate => 16000;
 
         public int PcmChannels => 1;
@@ -113,9 +115,10 @@ public sealed class AuditionServiceTests
             return Task.FromResult<IReadOnlyList<TtsVoice>>(Voices.ToArray());
         }
 
-        public Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, CancellationToken cancellationToken = default)
+        public Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, double? speed = null, CancellationToken cancellationToken = default)
         {
             SynthCalls.Add((voiceId, text));
+            SynthSpeeds.Add(speed);
             double seconds = _durations.Count > 0 ? _durations.Dequeue() : 1.0;
             int frames = (int)Math.Round(seconds * PcmSampleRate);
             byte[] pcm = new byte[frames * 2];
@@ -136,12 +139,14 @@ public sealed class AuditionServiceTests
         }
     }
 
-    /// <summary>Counting fake Meta handler: translations and meaning JSONs from queues.</summary>
+    /// <summary>Counting fake Meta handler: translations, variants JSONs, and meaning JSONs from queues.</summary>
     private sealed class MetaFake
     {
         public Queue<string> Translations = new();
+        public Queue<string> VariantsJsons = new();
         public Queue<string> MeaningJsons = new();
         public int Calls;
+        public int VariantsCalls;
 
         public MetaClient BuildClient()
         {
@@ -162,6 +167,17 @@ public sealed class AuditionServiceTests
                         PromptTokens = 7,
                         CompletionTokens = 4,
                     });
+                }
+
+                if (body.Contains("Alternates wanted", StringComparison.Ordinal))
+                {
+                    VariantsCalls++;
+                    if (VariantsJsons.Count == 0)
+                    {
+                        throw new InvalidOperationException("No more canned variants JSON queued.");
+                    }
+
+                    return ChatResponse(new ChatReply { Content = VariantsJsons.Dequeue() });
                 }
 
                 if (Translations.Count == 0)
@@ -299,7 +315,11 @@ public sealed class AuditionServiceTests
     {
         using var shim = EnvShim(MetaKey);
         MetaFake meta = OverlongMeta(MeaningPasses.Three);
-        var tts = new FakeTts([6.0, 6.0, 6.0]);
+        // Alternates and the speed variant are now attempted before a line stays
+        // uncast: one overlong alternate, meaning-passing, then the speed variant.
+        meta.VariantsJsons.Enqueue("""{"variants":["Frase larga variante que sigue y sigue y sigue y sigue y sigue y sigue y sigue y sigue."]}""");
+        meta.MeaningJsons.Enqueue(PassJson);
+        var tts = new FakeTts([6.0, 6.0, 6.0, 6.0, 6.0]);
 
         AuditionReport report = await BuildService(meta, tts).RunAsync(
             [new AuditionSegmentInput("seg-1", "A long line that runs over.", 4.0, "anna")], "en", "es");
@@ -311,6 +331,11 @@ public sealed class AuditionServiceTests
 
         AuditionTotals totals = report.Totals;
         Assert.Equal(0, totals.LinesCast);
+        Assert.Equal(5, line.Takes.Length);
+        Assert.Equal(5, totals.TakesSynthesized);
+        Assert.Equal(QaAttemptKind.Alternate, line.Takes[3].Kind);
+        Assert.Equal(QaAttemptKind.SpeedVariant, line.Takes[4].Kind);
+        Assert.Equal(AuditionService.SpeedVariantFactor, line.Takes[4].SpeedFactor);
         Assert.All(line.Takes, t =>
         {
             Assert.Equal(MeaningVerdict.Pass, t.MeaningVerdict);
@@ -319,6 +344,9 @@ public sealed class AuditionServiceTests
             Assert.Equal(AuditionTimingVerdict.Fail, timing);
             Assert.False(t.IsWinner);
         });
+
+        // 4 QA translations + 3 candidate meaning checks + 1 variants call + 1 alternate meaning check.
+        Assert.Equal(9, totals.MetaCalls);
     }
 
     [Fact]
@@ -372,5 +400,146 @@ public sealed class AuditionServiceTests
             service.RunAsync([new AuditionSegmentInput("seg-1", "Hello.", 1.0, "anna")], "en", "es"));
 
         Assert.Equal(0, meta.Calls);
+    }
+
+    [Fact]
+    public async Task FirstPass_line_failing_measured_timing_receives_alternates()
+    {
+        using var shim = EnvShim(MetaKey);
+        var meta = new MetaFake();
+        // QA passes on attempt 1 (estimate 13c/15 = 0.87s fits window 2.0+10%):
+        // exactly one candidate, the byproduct problem from the Oct 30 audition.
+        meta.Translations.Enqueue("Hola, Ashley.");
+        meta.MeaningJsons.Enqueue(PassJson);
+        meta.VariantsJsons.Enqueue("""{"variants":["Hola, Ashley, qué gusto.","Saludos, Ashley."]}""");
+        meta.MeaningJsons.Enqueue(PassJson);
+        meta.MeaningJsons.Enqueue(PassJson);
+        // Measured: initial 3.0 fails (allowed 2.2), alt1 2.6 fails, alt2 2.1 passes.
+        var tts = new FakeTts([3.0, 2.6, 2.1]);
+
+        AuditionReport report = await BuildService(meta, tts).RunAsync(
+            [new AuditionSegmentInput("seg-1", "Hi, Ashley.", 2.0, "anna")], "en", "es");
+
+        AuditionSegmentReport line = Assert.Single(report.Segments);
+        Assert.Equal(3, line.Takes.Length);
+        Assert.Equal(QaAttemptKind.Initial, line.Takes[0].Kind);
+        Assert.Equal(QaAttemptKind.Alternate, line.Takes[1].Kind);
+        Assert.Equal(QaAttemptKind.Alternate, line.Takes[2].Kind);
+        Assert.All(line.Takes, t => Assert.Equal(MeaningVerdict.Pass, t.MeaningVerdict));
+        Assert.All(line.Takes, t => Assert.True(t.Synthesized));
+
+        Assert.True(line.Cast);
+        Assert.Equal(3, line.WinnerTakeNumber);
+        Assert.Equal("seg-1-take3.wav", line.WinnerFileName);
+        Assert.Equal("Saludos, Ashley.", line.Takes[2].Text);
+
+        // 1 translation + 1 QA meaning + 1 variants + 2 alternate meaning checks.
+        Assert.Equal(5, report.Totals.MetaCalls);
+        Assert.Equal(5, meta.Calls);
+        Assert.Equal(1, meta.VariantsCalls);
+        Assert.Equal(3, report.Totals.TakesSynthesized);
+        // A winner was found among the alternates, so no speed variant was synthesized.
+        Assert.DoesNotContain(line.Takes, t => t.Kind == QaAttemptKind.SpeedVariant);
+        Assert.All(tts.SynthSpeeds, s => Assert.Null(s));
+    }
+
+    [Fact]
+    public async Task MeaningFailing_alternate_is_never_synthesized()
+    {
+        using var shim = EnvShim(MetaKey);
+        var meta = new MetaFake();
+        meta.Translations.Enqueue("Hola, Ashley.");
+        meta.MeaningJsons.Enqueue(PassJson);
+        meta.VariantsJsons.Enqueue("""{"variants":["Variante uno de Ashley.","Saludos, Ashley."]}""");
+        meta.MeaningJsons.Enqueue(FailJson("dropped greeting"));
+        meta.MeaningJsons.Enqueue(PassJson);
+        var tts = new FakeTts([3.0, 2.1]);
+
+        AuditionReport report = await BuildService(meta, tts).RunAsync(
+            [new AuditionSegmentInput("seg-1", "Hi, Ashley.", 2.0, "anna")], "en", "es");
+
+        AuditionSegmentReport line = Assert.Single(report.Segments);
+        Assert.Equal(3, line.Takes.Length);
+
+        AuditionTakeReport failedAlternate = line.Takes[1];
+        Assert.Equal(QaAttemptKind.Alternate, failedAlternate.Kind);
+        Assert.Equal(MeaningVerdict.Fail, failedAlternate.MeaningVerdict);
+        Assert.False(failedAlternate.Synthesized);
+        Assert.Contains("Meaning gate", failedAlternate.SynthesisNote);
+
+        // Only the initial candidate and the meaning-passing alternate reached TTS.
+        Assert.Equal(2, tts.SynthCalls.Count);
+        Assert.Equal("Hola, Ashley.", tts.SynthCalls[0].Text);
+        Assert.Equal("Saludos, Ashley.", tts.SynthCalls[1].Text);
+        Assert.Equal(2, report.Totals.TakesSynthesized);
+        Assert.True(line.Cast);
+        Assert.Equal(3, line.WinnerTakeNumber);
+    }
+
+    [Fact]
+    public async Task Speed_variant_is_labeled_and_measured()
+    {
+        using var shim = EnvShim(MetaKey);
+        var meta = new MetaFake();
+        meta.Translations.Enqueue("Hola, Ashley.");
+        meta.MeaningJsons.Enqueue(PassJson);
+        meta.VariantsJsons.Enqueue("""{"variants":["Saludos, Ashley."]}""");
+        meta.MeaningJsons.Enqueue(PassJson);
+        // Initial 3.0 (err 0.8) and alternate 2.6 (err 0.4) both fail; the speed
+        // variant re-synthesizes the closer text (the alternate) at 1.15 -> 2.1 passes.
+        var tts = new FakeTts([3.0, 2.6, 2.1]);
+
+        AuditionReport report = await BuildService(meta, tts).RunAsync(
+            [new AuditionSegmentInput("seg-1", "Hi, Ashley.", 2.0, "anna")], "en", "es");
+
+        AuditionSegmentReport line = Assert.Single(report.Segments);
+        Assert.Equal(3, line.Takes.Length);
+
+        AuditionTakeReport speed = line.Takes[2];
+        Assert.Equal(QaAttemptKind.SpeedVariant, speed.Kind);
+        Assert.Equal(AuditionService.SpeedVariantFactor, speed.SpeedFactor);
+        Assert.Equal("Saludos, Ashley.", speed.Text);
+        Assert.Equal(MeaningVerdict.Pass, speed.MeaningVerdict);
+        Assert.Equal(0, speed.MeaningTokens);
+        Assert.True(speed.Synthesized);
+        Assert.NotNull(speed.MeasuredSeconds);
+        Assert.Equal(2.1, speed.MeasuredSeconds!.Value, 3);
+        Assert.Equal(AuditionTimingVerdict.Pass, speed.TimingVerdict);
+        Assert.True(speed.IsWinner);
+        Assert.True(line.Cast);
+        Assert.Equal(3, line.WinnerTakeNumber);
+
+        Assert.Equal([null, null, AuditionService.SpeedVariantFactor], tts.SynthSpeeds);
+        // No Meta call for the speed variant: 1 translation + 1 QA meaning + 1 variants + 1 alternate meaning.
+        Assert.Equal(4, report.Totals.MetaCalls);
+    }
+
+    [Fact]
+    public async Task PerSegment_take_cap_stops_generation_before_the_speed_variant()
+    {
+        using var shim = EnvShim(MetaKey);
+        MetaFake meta = OverlongMeta(MeaningPasses.Three);
+        meta.VariantsJsons.Enqueue("""{"variants":["Frase larga variante uno que sigue y sigue y sigue y sigue y sigue y sigue y sigue.","Frase larga variante dos que sigue y sigue y sigue y sigue y sigue y sigue y sigue."]}""");
+        meta.MeaningJsons.Enqueue(PassJson);
+        meta.MeaningJsons.Enqueue(PassJson);
+        var tts = new FakeTts([6.0, 6.0, 6.0, 6.0, 6.0]);
+
+        AuditionReport report = await BuildService(meta, tts).RunAsync(
+            [new AuditionSegmentInput("seg-1", "A long line that runs over.", 4.0, "anna")], "en", "es");
+
+        AuditionSegmentReport line = Assert.Single(report.Segments);
+        // 3 candidates + 2 alternates synthesized = the all-in cap of 5; the speed
+        // variant is listed but not synthesized, with the cap note preserved.
+        Assert.Equal(6, line.Takes.Length);
+        Assert.Equal(5, line.Takes.Count(t => t.Synthesized));
+        Assert.Equal(5, report.Totals.TakesSynthesized);
+        Assert.Equal(5, tts.SynthCalls.Count);
+
+        AuditionTakeReport speed = line.Takes[5];
+        Assert.Equal(QaAttemptKind.SpeedVariant, speed.Kind);
+        Assert.False(speed.Synthesized);
+        Assert.Contains("cap", speed.SynthesisNote ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.False(line.Cast);
+        Assert.Null(line.WinnerTakeNumber);
     }
 }

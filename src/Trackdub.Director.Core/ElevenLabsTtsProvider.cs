@@ -64,14 +64,14 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
         return ParseVoices(body);
     }
 
-    public async Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, CancellationToken cancellationToken = default)
+    public async Task<TtsSynthesisResult> SynthesizeAsync(string voiceId, string text, string languageCode, double? speed = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(voiceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         ArgumentException.ThrowIfNullOrWhiteSpace(languageCode);
 
         string url = $"{ElevenLabsAuth.GetBaseUrl()}/text-to-speech/{Uri.EscapeDataString(voiceId.Trim())}?output_format=pcm_16000";
-        var payload = new SynthRequest(text, _modelId, languageCode.Trim());
+        var payload = new SynthRequest(text, _modelId, languageCode.Trim(), speed is null ? null : new VoiceSettings(speed.Value));
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         AddAuth(request);
         request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
@@ -237,5 +237,9 @@ public sealed class ElevenLabsTtsProvider : ITtsProvider, IDisposable
     private sealed record SynthRequest(
         [property: JsonPropertyName("text")] string Text,
         [property: JsonPropertyName("model_id")] string ModelId,
-        [property: JsonPropertyName("language_code")] string LanguageCode);
+        [property: JsonPropertyName("language_code")] string LanguageCode,
+        [property: JsonPropertyName("voice_settings")] VoiceSettings? VoiceSettings = null);
+
+    private sealed record VoiceSettings(
+        [property: JsonPropertyName("speed")] double Speed);
 }

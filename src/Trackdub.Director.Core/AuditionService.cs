@@ -17,10 +17,24 @@ namespace Trackdub.Director.Core;
 /// with the remaining segments reported uncast. Candidates whose meaning was
 /// deliberately skipped by QA timing (NotEvaluated) are meaning-checked here
 /// before any synthesis, so every synthesized text carries a fresh meaning verdict.
+///
+/// When the QA candidates produce no winning take and budget remains, the lane
+/// requests up to <see cref="MaxAlternateVariants"/> alternate phrasings of the
+/// segment's best meaning-passing text (template translate-variants-v1); every
+/// alternate is meaning-gated before synthesis exactly like existing takes. As a
+/// final option, the best meaning-passing text is re-synthesized once at the
+/// provider speed setting <see cref="SpeedVariantFactor"/> and measured like any
+/// other take. Synthesis stops at <see cref="MaxSynthesizedTakesPerSegment"/>
+/// takes per segment all-in. A segment with no passing take after all of this is
+/// reported uncast; forcing a winner is a bug.
 /// </summary>
 public sealed class AuditionService
 {
     public const int MaxTakesPerSegment = 3;
+    public const int MaxSynthesizedTakesPerSegment = 5;
+    public const int MaxAlternateVariants = 2;
+    public const double SpeedVariantFactor = 1.15;
+    public const string VariantsPromptTemplateVersion = "translate-variants-v1";
     public const int MaxElevenLabsCharacters = 3000;
     public const int MaxMetaCalls = 40;
 
@@ -145,8 +159,9 @@ public sealed class AuditionService
 
     // Worst case for one segment: an initial translation and up to MaxAttempts
     // revisions, each with a meaning check, plus a meaning check for every candidate
-    // that QA left unevaluated.
-    private int WorstCaseCallsPerSegment() => 2 * (_options.MaxAttempts + 1) + MaxTakesPerSegment;
+    // that QA left unevaluated, plus one variants call and a meaning check per alternate.
+    // The speed variant reuses an already-passing text and costs no Meta call.
+    private int WorstCaseCallsPerSegment() => 2 * (_options.MaxAttempts + 1) + MaxTakesPerSegment + 1 + MaxAlternateVariants;
 
     private async Task<Dictionary<string, QaSegmentReport>> GenerateCandidatesAsync(
         IReadOnlyList<AuditionSegmentInput> segments,
@@ -285,6 +300,20 @@ public sealed class AuditionService
         }
 
         TakeWork? winner = PickWinner(takes, work.Qa.WindowSeconds);
+        string? note = null;
+        if (winner is null)
+        {
+            note = await AddAlternatesAsync(work, takes, run, cancellationToken).ConfigureAwait(false);
+            winner = PickWinner(takes, work.Qa.WindowSeconds);
+        }
+
+        if (winner is null)
+        {
+            string? speedNote = await AddSpeedVariantAsync(work, takes, run, cancellationToken).ConfigureAwait(false);
+            note ??= speedNote;
+            winner = PickWinner(takes, work.Qa.WindowSeconds);
+        }
+
         AuditionTakeReport[] reports = takes.Select(t => t.ToReport(winner, work.Segment.Id)).ToArray();
         return new AuditionSegmentReport(
             work.Segment.Id,
@@ -295,7 +324,177 @@ public sealed class AuditionService
             reports,
             Cast: winner is not null,
             WinnerTakeNumber: winner?.TakeNumber,
-            WinnerFileName: winner?.FileName(work.Segment.Id));
+            WinnerFileName: winner?.FileName(work.Segment.Id),
+            Note: note);
+    }
+
+    // The best meaning-passing take: measured timing closest to the window wins;
+    // an unsynthesized take sorts last. Null when no take has passed the meaning gate,
+    // in which case there is no trustworthy text to vary or speed up.
+    private static TakeWork? BestMeaningPassingTake(IReadOnlyList<TakeWork> takes, double windowSeconds)
+    {
+        return takes
+            .Where(t => t.MeaningVerdict == MeaningVerdict.Pass)
+            .OrderBy(t => t.MeasuredSeconds is null ? double.MaxValue : Math.Abs(t.MeasuredSeconds.Value - windowSeconds))
+            .FirstOrDefault();
+    }
+
+    private static bool SegmentSynthFull(IReadOnlyList<TakeWork> takes)
+    {
+        return takes.Count(t => t.Synthesized) >= MaxSynthesizedTakesPerSegment;
+    }
+
+    // Requests up to MaxAlternateVariants phrasings of the segment's best text when no
+    // candidate won. Every alternate is meaning-gated through the same path as QA
+    // candidates before any synthesis. Returns a segment note when alternates could
+    // not be produced; null when they were (or were not needed).
+    private async Task<string?> AddAlternatesAsync(
+        SegmentCandidates work,
+        List<TakeWork> takes,
+        RunState run,
+        CancellationToken cancellationToken)
+    {
+        if (work.Cast is null)
+        {
+            return "No cast voice for this speaker; alternates not requested.";
+        }
+
+        TakeWork? best = BestMeaningPassingTake(takes, work.Qa.WindowSeconds);
+        if (best is null)
+        {
+            return "No meaning-passing text to base alternates on.";
+        }
+
+        if (SegmentSynthFull(takes))
+        {
+            return $"Per-segment take cap ({MaxSynthesizedTakesPerSegment}) reached; no alternates requested.";
+        }
+
+        MetaClient.VariantsCompletionResult variants;
+        try
+        {
+            variants = await run.Client.TranslateVariantsAsync(
+                new MetaClient.VariantsRequest(work.Segment.Text, best.Attempt.Translation, run.SourceLanguage, run.TargetLanguage, MaxAlternateVariants),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (MetaBudgetExhaustedException)
+        {
+            // Refused before sending: not counted, reported as a cap hit.
+            run.MetaCapHit = true;
+            return "Meta call budget ran out before the alternates request.";
+        }
+        catch (Exception ex) when (
+            ex is MetaApiException or HttpRequestException or InvalidOperationException
+            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            // The request was reserved and sent before it failed, so it counts.
+            run.MetaCalls++;
+            return $"Alternates request failed: {Truncate(ex.Message)}";
+        }
+
+        // Counted only once the call was sent.
+        run.MetaCalls++;
+        int variantsTokens = variants.Usage?.TotalTokens ?? 0;
+        run.TranslationTokens += variantsTokens;
+
+        HashSet<string> existingTexts = takes.Select(t => t.Attempt.Translation.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        int nextNumber = takes.Max(t => t.TakeNumber) + 1;
+        bool tokensAttributed = false;
+        foreach (string text in variants.Variants)
+        {
+            if (!existingTexts.Add(text.Trim()))
+            {
+                continue;
+            }
+
+            if (SegmentSynthFull(takes))
+            {
+                break;
+            }
+
+            // The single variants call's tokens ride on the first alternate take created.
+            int tokenAllocation = tokensAttributed ? 0 : variantsTokens;
+            QaAttemptReport attempt = SyntheticAttempt(work, run, nextNumber++, QaAttemptKind.Alternate, text, tokenAllocation);
+            tokensAttributed = true;
+            TakeWork take = await ResolveMeaningAsync(work.Segment, attempt, run, cancellationToken).ConfigureAwait(false);
+            take.Cast = work.Cast;
+            await SynthesizeAsync(take, run, cancellationToken).ConfigureAwait(false);
+            takes.Add(take);
+        }
+
+        if (!tokensAttributed && variantsTokens > 0)
+        {
+            return $"Alternates request returned only duplicate texts; its {variantsTokens} tokens are counted at run level only.";
+        }
+
+        return null;
+    }
+
+    // Final option per segment: the best meaning-passing text re-synthesized once at
+    // SpeedVariantFactor. No new Meta call (the text already passed the gate); the
+    // duration is measured from the returned audio like any other take.
+    private async Task<string?> AddSpeedVariantAsync(
+        SegmentCandidates work,
+        List<TakeWork> takes,
+        RunState run,
+        CancellationToken cancellationToken)
+    {
+        TakeWork? best = BestMeaningPassingTake(takes, work.Qa.WindowSeconds);
+        if (best is null || !best.Synthesized)
+        {
+            return null;
+        }
+
+        int nextNumber = takes.Max(t => t.TakeNumber) + 1;
+        QaAttemptReport attempt = SyntheticAttempt(work, run, nextNumber, QaAttemptKind.SpeedVariant, best.Attempt.Translation, 0);
+        var take = new TakeWork(attempt)
+        {
+            Cast = work.Cast,
+        };
+        // The text passed the gate already; carry the verdict with zero new tokens.
+        take.ApplyMeaning(MeaningVerdict.Pass, best.MeaningIssues, best.MeaningExplanation, 0);
+        if (SegmentSynthFull(takes))
+        {
+            take.Note = $"Per-segment take cap ({MaxSynthesizedTakesPerSegment}) reached; speed variant not synthesized.";
+            takes.Add(take);
+            return take.Note;
+        }
+
+        // Labeled only once the take will actually be synthesized at the factor.
+        take.SpeedFactor = SpeedVariantFactor;
+        await SynthesizeAsync(take, run, cancellationToken, SpeedVariantFactor).ConfigureAwait(false);
+        takes.Add(take);
+        return null;
+    }
+
+    // A take-shaped attempt for a text that did not come out of the QA loop
+    // (alternate phrasing or speed variant). Estimated seconds and max chars are
+    // computed with the same deterministic estimator QA uses; verdicts start
+    // unevaluated so the meaning gate runs before any synthesis decision.
+    private QaAttemptReport SyntheticAttempt(
+        SegmentCandidates work,
+        RunState run,
+        int attemptNumber,
+        QaAttemptKind kind,
+        string text,
+        int translationTokens)
+    {
+        double cps = _options.GetCharactersPerSecond(run.TargetLanguage);
+        double window = work.Qa.WindowSeconds;
+        return new QaAttemptReport(
+            attemptNumber,
+            kind,
+            text,
+            DurationEstimator.EstimateSeconds(text, cps),
+            window,
+            DurationEstimator.MaxCharsForWindow(window * (1.0 + _options.ToleranceFraction), cps),
+            QaVerdict.Fail,
+            translationTokens,
+            0,
+            translationTokens,
+            MetaAuth.GetModel(),
+            TimingVerdict: QaVerdict.Fail,
+            MeaningVerdict: MeaningVerdict.NotEvaluated);
     }
 
     private static AuditionCastVoice? ResolveCastVoice(
@@ -363,7 +562,7 @@ public sealed class AuditionService
         }
     }
 
-    private async Task SynthesizeAsync(TakeWork take, RunState run, CancellationToken cancellationToken)
+    private async Task SynthesizeAsync(TakeWork take, RunState run, CancellationToken cancellationToken, double? speed = null)
     {
         string? skipReason = SkipReason(take, run);
         if (skipReason is not null)
@@ -376,7 +575,7 @@ public sealed class AuditionService
         TtsSynthesisResult result;
         try
         {
-            result = await _tts.SynthesizeAsync(voice.VoiceId, take.Attempt.Translation, run.TargetLanguage, cancellationToken).ConfigureAwait(false);
+            result = await _tts.SynthesizeAsync(voice.VoiceId, take.Attempt.Translation, run.TargetLanguage, speed, cancellationToken).ConfigureAwait(false);
         }
         catch (TtsApiException ex) when (!ex.IsAuthFailure)
         {
@@ -572,6 +771,8 @@ public sealed class AuditionService
 
         public byte[]? AudioBytes { get; set; }
 
+        public double? SpeedFactor { get; set; }
+
         public void ApplyMeaning(MeaningVerdict verdict, string[]? issues, string? explanation, int tokens)
         {
             MeaningVerdict = verdict;
@@ -605,6 +806,7 @@ public sealed class AuditionService
                 TranslationTokens: Attempt.TotalTokens,
                 MeaningTokens: MeaningTokens,
                 ElevenLabsCharacters: Characters,
+                SpeedFactor: SpeedFactor,
                 AudioBytes: AudioBytes);
         }
     }
