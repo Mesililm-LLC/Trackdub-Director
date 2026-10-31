@@ -13,7 +13,45 @@ export type SegmentInput = {
   translation?: string | null;
   context?: DirectorContextInput | null;
   director_adaptation?: { target_register?: string | null } | null;
+  box?: LocalisationBox | null;
+  source_text?: string | null;
+  target_text?: string | null;
 };
+
+export type LocalisationBox = { x1: number; y1: number; x2: number; y2: number };
+
+// Visual localisation: crop-edit-composite of one sign box per frame. The
+// viewer is read-only; outside_box_diff is machine-checked server-side.
+export type VisualLocalisationSegmentResult = {
+  id: string;
+  status: string; // Localised | Failed
+  localised_image_data_url?: string | null;
+  box?: LocalisationBox | null;
+  source_text?: string | null;
+  target_text?: string | null;
+  outside_box_diff?: number | null;
+  error?: string | null;
+  provenance: TranslationProvenance;
+  usage: TranslationUsage;
+  image_calls: number;
+};
+
+export type VisualLocalisationBatch = {
+  segments: VisualLocalisationSegmentResult[];
+  usage_total: TranslationUsage;
+  image_calls_total: number;
+};
+
+export async function postVisualLocalisation(segments: SegmentInput[]): Promise<VisualLocalisationBatch> {
+  const visualSegments = segments.map((s) => ({
+    id: s.id,
+    frame_image_data_url: s.frame_image_data_url ?? null,
+    box: s.box ?? null,
+    source_text: s.source_text ?? null,
+    target_text: s.target_text ?? null,
+  }));
+  return postJson<VisualLocalisationBatch>("/api/visual-localisation", { segments: visualSegments });
+}
 
 // Caller-supplied DirectorContext on an input segment. Null fields are omitted
 // by the server, so every field is optional here too.

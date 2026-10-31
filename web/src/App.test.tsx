@@ -532,6 +532,68 @@ describe("App smoke", () => {
     expect(within(seg2).getAllByText("Winner")).toHaveLength(1);
   });
 
+  it("shows before/after frames with usage and outside_box_diff after Run Visual", async () => {
+    const visualMock = {
+      segments: [
+        {
+          id: "seg-001",
+          status: "Localised",
+          localised_image_data_url: "data:image/png;base64,bG9jYWxpc2Vk",
+          box: { x1: 449, y1: 145, x2: 751, y2: 534 },
+          source_text: "COFFEE SHOP",
+          target_text: "CAFETERÍA",
+          outside_box_diff: 0,
+          error: null,
+          provenance: { model_id: "muse-image-1.0", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-31T00:00:00Z", prompt_template_version: "image-edit-v1" },
+          usage: { prompt_tokens: 11868, completion_tokens: 637, total_tokens: 12505 },
+          image_calls: 1,
+        },
+        {
+          id: "seg-002",
+          status: "Failed",
+          localised_image_data_url: null,
+          box: { x1: 449, y1: 145, x2: 751, y2: 534 },
+          source_text: "COFFEE SHOP",
+          target_text: "CAFETERÍA",
+          outside_box_diff: null,
+          error: "Meta Model API response carried no image (missing image_generation_call result).",
+          provenance: { model_id: "muse-image-1.0", endpoint_host: "api.meta.ai", timestamp_utc: "2026-10-31T00:00:00Z", prompt_template_version: "image-edit-v1" },
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          image_calls: 1,
+        },
+      ],
+      usage_total: { prompt_tokens: 11868, completion_tokens: 637, total_tokens: 12505 },
+      image_calls_total: 2,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/status")) return new Response(JSON.stringify(statusOk), { status: 200 });
+        if (url.includes("/api/visual-localisation")) return new Response(JSON.stringify(visualMock), { status: 200 });
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    render(<App />);
+    screen.getByRole("button", { name: "Run Visual" }).click();
+    await waitFor(() => expect(screen.getByText("Visual: Localised")).toBeInTheDocument());
+
+    const seg1 = getCard("seg-001");
+    // Source and localised frames render side by side with the target text.
+    expect(within(seg1).getByText(/Before · COFFEE SHOP/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/After · CAFETERÍA/)).toBeInTheDocument();
+    expect(within(seg1).getByAltText("Localised frame for seg-001")).toHaveAttribute("src", "data:image/png;base64,bG9jYWxpc2Vk");
+    // Usage and the machine-checked diff are shown.
+    expect(within(seg1).getByText(/Visual gate: model muse-image-1\.0 · template image-edit-v1/)).toBeInTheDocument();
+    expect(within(seg1).getByText(/tokens 12505 · image calls 1 · outside_box_diff 0/)).toBeInTheDocument();
+
+    // A failed segment shows the reason and never an unmodified frame.
+    const seg2 = getCard("seg-002");
+    expect(within(seg2).getByText("Visual: Failed")).toBeInTheDocument();
+    expect(within(seg2).getByText(/carried no image/)).toBeInTheDocument();
+    expect(within(seg2).queryByAltText("Localised frame for seg-002")).not.toBeInTheDocument();
+  });
+
   it("shows read-only scene context after Run Scene", async () => {
     const sceneMock = {
       segments: [

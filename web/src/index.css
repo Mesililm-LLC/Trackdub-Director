@@ -124,3 +124,5 @@ a { color: #8ab4ff; }
 .director-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .director-grid .line-translation { overflow-wrap: anywhere; }
 .director-label { color: var(--muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+
+.visual-frame { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; display: block; }

@@ -1,0 +1,55 @@
+{
+  "stage": "visual-localisation",
+  "date": "2026-10-31",
+  "model": "muse-image-1.0",
+  "prompt_template_version": "image-edit-v1",
+  "endpoint": "POST https://api.meta.ai/v1/responses",
+  "strategy": "crop-edit-composite (box + 20px padding; only the box interior is composited back; outside-box pixels copied from source)",
+  "image_calls_total": 5,
+  "image_calls_breakdown": { "probe": 2, "validation": 3 },
+  "usage_total": { "prompt_tokens": 69317, "completion_tokens": 3207, "total_tokens": 72524, "note": "validation calls only; probe call 1 used 12505 (11868+637), probe call 2 errored with no usage; stage grand total 85029" },
+  "frames": [
+    {
+      "id": "hero-0242",
+      "source_frame": "frames/hero-0242.jpg",
+      "clip_timecode_seconds": 6.52,
+      "box": { "x1": 449, "y1": 145, "x2": 751, "y2": 534 },
+      "source_text": "COFFEE SHOP",
+      "target_text": "CAFETERÍA",
+      "verdict": "pass",
+      "verdict_note": "Sign reads exactly CAFETERÍA, accent on Í, no garbled or extra letters (visual inspection).",
+      "outside_box_diff": 0,
+      "usage": { "prompt_tokens": 17188, "completion_tokens": 829, "total_tokens": 18017 },
+      "wall_seconds": 21.03,
+      "output": "frames/localised/hero-0242-cafeteria.png"
+    },
+    {
+      "id": "sign-0260",
+      "source_frame": "frames/sign-0260.jpg",
+      "clip_timecode_seconds": 2.6,
+      "box": { "x1": 449, "y1": 145, "x2": 751, "y2": 534 },
+      "source_text": "COFFEE SHOP",
+      "target_text": "CAFETERÍA",
+      "verdict": "pass",
+      "verdict_note": "Sign reads exactly CAFETERÍA, accent on Í, no garbled or extra letters (visual inspection). Sign inside the same box; camera static.",
+      "outside_box_diff": 0,
+      "usage": { "prompt_tokens": 34973, "completion_tokens": 1563, "total_tokens": 36536 },
+      "wall_seconds": 28.84,
+      "output": "frames/localised/sign-0260-cafeteria.png"
+    },
+    {
+      "id": "sign-1250",
+      "source_frame": "frames/sign-1250.jpg",
+      "clip_timecode_seconds": 12.5,
+      "box": { "x1": 449, "y1": 145, "x2": 751, "y2": 534 },
+      "source_text": "COFFEE SHOP",
+      "target_text": "CAFETERÍA",
+      "verdict": "pass",
+      "verdict_note": "Sign reads exactly CAFETERÍA, accent on Í, no garbled or extra letters (visual inspection). Sign inside the same box; camera static.",
+      "outside_box_diff": 0,
+      "usage": { "prompt_tokens": 17156, "completion_tokens": 815, "total_tokens": 17971 },
+      "wall_seconds": 11.67,
+      "output": "frames/localised/sign-1250-cafeteria.png"
+    }
+  ]
+}

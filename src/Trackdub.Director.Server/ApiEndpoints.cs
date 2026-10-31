@@ -140,6 +140,26 @@ internal static class ApiEndpoints
         }).ConfigureAwait(false);
     }
 
+    internal static async Task<IResult> VisualLocalisationAsync(HttpRequest request, VisualLocalisationService service, CancellationToken ct)
+    {
+        var (segments, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadVisualLocalisationRequestAsync(request, ct));
+        if (readError is not null)
+        {
+            return readError;
+        }
+
+        if (segments is null || segments.Length == 0)
+        {
+            return Results.BadRequest(new { error = "Request must include a non-empty 'segments' array of { id, frame_image_data_url, box, source_text, target_text }." });
+        }
+
+        return await ApiHandlers.GuardAsync(async () =>
+        {
+            VisualLocalisationBatch batch = await service.RunAsync(segments, ct).ConfigureAwait(false);
+            return Results.Json(batch);
+        }).ConfigureAwait(false);
+    }
+
     internal static async Task<IResult> AuditionAsync(HttpRequest request, MetaClient client, ITtsProvider tts, CancellationToken ct)
     {
         var (req, readError) = await ApiHandlers.ReadOrBadRequestAsync(() => ReadAuditionRequestAsync(request, ct));
